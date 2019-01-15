@@ -299,7 +299,7 @@ ENDIF INIT_WIDE_BAND
 !
 !-------------------------------------------------------------------------
 
-MAKE_KAPPA_ARRAYS: IF (.NOT.SOLID_PHASE_ONLY .AND. ANY(SPECIES%RADCAL_ID/='null')) THEN
+MAKE_KAPPA_ARRAYS: IF (.NOT.SOLID_PHASE_ONLY .AND. ANY(SPECIES%RADCAL_ID/='null') .AND. .NOT.WSGG_MODEL) THEN
 
    ! Check for valid RADCAL species and setup arrays from ZZ to RADCAL_YY
 
@@ -704,6 +704,12 @@ TYPE(RAD_FILE_TYPE), POINTER :: RF
 TYPE(LAGRANGIAN_PARTICLE_CLASS_TYPE), POINTER :: LPC
 TYPE(LAGRANGIAN_PARTICLE_TYPE), POINTER :: LP
 CHARACTER(20) :: FORMT
+
+!Variables added for the WSGG model
+REAL(EB) :: MOL_RAT,PARTIAL_P,R_MIXTURE,TOTAL_P
+REAL(EB), ALLOCATABLE, DIMENSION(:) :: Z_ARRAY
+ALLOCATE(Z_ARRAY(N_TRACKED_SPECIES))
+
 ALLOCATE( IJK_SLICE(3, IBAR*KBAR) )
 
 KFST4_GAS => WORK1
@@ -739,7 +745,7 @@ ENDIF
 
 IF (RAD_ITER==RADIATION_ITERATIONS) RAD_CALL_COUNTER  = RAD_CALL_COUNTER + 1
 
-IF (WIDE_BAND_MODEL) THEN
+IF (WIDE_BAND_MODEL.OR.WSGG_MODEL) THEN
    QR = 0._EB
 ENDIF
 
@@ -772,6 +778,12 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
    IF (NUMBER_SPECTRAL_BANDS==1) THEN
       BBFA = 1._EB
+   ELSEIF (WSGG_MODEL) THEN																			!Computing the temperature coefficient in the WSGG model at ambient temperature
+		Z_ARRAY(1:N_TRACKED_SPECIES) = SPECIES_MIXTURE(1:N_TRACKED_SPECIES)%ZZ0			!Mass fraction of the tracked species in the outside ambient
+		R_MIXTURE = RSUM0																					!Specific gas constant of the outside ambient
+		MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+			(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE)+TWO_EPSILON_EB)	!Molar ratio
+		BBFA = A_WSGG(TMPA,MOL_RAT,IBND)
    ELSE
       BBFA = BLACKBODY_FRACTION(WL_LOW(IBND),WL_HIGH(IBND),TMPA)
    ENDIF
@@ -868,6 +880,34 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
          ENDDO
       ENDDO
 
+   ELSEIF (WSGG_MODEL) THEN WIDE_BAND_MODEL_IF
+		
+		DO K=1,KBAR
+         DO J=1,JBAR
+            DO I=1,IBAR
+               IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
+               IF (UVW_RESTART) THEN																			!For the verification cases
+						MOL_RAT = GET_RESTART_VOLUME_FRACTION('WATER VAPOR',I,J,K)/&
+							(GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',I,J,K) + TWO_EPSILON_EB)		!Molar ratio
+						TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))		!Total pressure
+						PARTIAL_P = TOTAL_P*(GET_RESTART_VOLUME_FRACTION('WATER VAPOR',I,J,K) + &
+							GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',I,J,K))/P_STP						!Partial pressure of the CO2-H2O mixture
+               ELSE																									!For general computations
+						Z_ARRAY(1:N_TRACKED_SPECIES) = ZZ(I,J,K,1:N_TRACKED_SPECIES)
+						R_MIXTURE = RSUM(I,J,K)
+						MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+							(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE)+TWO_EPSILON_EB)
+						TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))
+						PARTIAL_P = TOTAL_P*(GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE) + &
+							GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE))/P_STP
+               ENDIF
+					BBF = A_WSGG(TMP(I,J,K),MOL_RAT,IBND)											!Temperature coefficient for the jth gas
+					KAPPA_GAS(I,J,K) = KAPPA_WSGG(TMP(I,J,K),MOL_RAT,PARTIAL_P,IBND)		!Absorption coefficient for the jth gas
+               KFST4_GAS(I,J,K) = BBF*KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4
+            ENDDO
+         ENDDO
+      ENDDO
+   
    ELSE WIDE_BAND_MODEL_IF
 
       ! Gray gas model
@@ -926,7 +966,7 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
    INTENSITY_UPDATE: IF (UPDATE_INTENSITY) THEN
 
-      IF (WIDE_BAND_MODEL) THEN
+      IF (WIDE_BAND_MODEL.OR.WSGG_MODEL) THEN
          UIIOLD = UIID(:,:,:,IBND)
       ELSE
          UIIOLD = UII
@@ -941,6 +981,20 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
             BBF = BBFA
          ELSE
             IF (WIDE_BAND_MODEL) BBF = BLACKBODY_FRACTION(WL_LOW(IBND),WL_HIGH(IBND),WALL(IW)%ONE_D%TMP_F)
+            IF (WSGG_MODEL) THEN
+					IF (UVW_RESTART) THEN								!For the verification cases
+						MOL_RAT = GET_RESTART_VOLUME_FRACTION('WATER VAPOR',WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG)/&
+							(GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG) + &
+								TWO_EPSILON_EB)
+					ELSE														!For general computations
+						Z_ARRAY(1:N_TRACKED_SPECIES) = &
+							ZZ(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG,1:N_TRACKED_SPECIES)
+						R_MIXTURE = RSUM(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG)
+						MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+							(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE) + TWO_EPSILON_EB)
+					ENDIF
+					BBF = A_WSGG(WALL(IW)%ONE_D%TMP_F,MOL_RAT,IBND)			!Temperature coefficient for the jth gray gas in the boundary 
+            ENDIF																		!(use information of the cell adjacent to the boundary)
             SF  => SURFACE(WALL(IW)%SURF_INDEX)
             IF (.NOT. SF%INTERNAL_RADIATION) WALL(IW)%ONE_D%Q_RAD_OUT = WALL(IW)%ONE_D%EMISSIVITY*SIGMA*WALL(IW)%ONE_D%TMP_F**4
          ENDIF
@@ -987,7 +1041,7 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
          ! Zero out UIID, the integrated intensity
 
-         IF (WIDE_BAND_MODEL) THEN
+         IF (WIDE_BAND_MODEL.OR.WSGG_MODEL) THEN
             UIID(:,:,:,IBND) = 0._EB
          ELSE
             UIID(:,:,:,ANGLE_INC_COUNTER) = 0._EB
@@ -1340,7 +1394,7 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
             ! Calculate integrated intensity UIID
 
-            IF (WIDE_BAND_MODEL) THEN
+            IF (WIDE_BAND_MODEL.OR.WSGG_MODEL) THEN
                UIID(:,:,:,IBND) = UIID(:,:,:,IBND) + WEIGH_CYL*RSA(N)*IL
             ELSE
                UIID(:,:,:,ANGLE_INC_COUNTER) = UIID(:,:,:,ANGLE_INC_COUNTER) + WEIGH_CYL*RSA(N)*IL
@@ -1426,7 +1480,7 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
    ! Save source term for the energy equation (QR = -DIV Q)
 
-   IF (WIDE_BAND_MODEL) THEN
+   IF (WIDE_BAND_MODEL.OR.WSGG_MODEL) THEN
       QR = QR + KAPPA_GAS*UIID(:,:,:,IBND)-KFST4_GAS
       IF (NLP>0 .AND. N_LP_ARRAY_INDICES>0) THEN
          QR_W = QR_W + KAPPA_PART*UIID(:,:,:,IBND) - KFST4_PART
@@ -1453,7 +1507,7 @@ ENDIF
 
 ! Save source term for the energy equation (QR = -DIV Q). Done only in one-band (gray gas) case.
 
-IF (.NOT. WIDE_BAND_MODEL) THEN
+IF (.NOT. (WIDE_BAND_MODEL.OR.WSGG_MODEL)) THEN
    QR  = KAPPA_GAS*UII - KFST4_GAS
    IF (NLP>0 .AND. N_LP_ARRAY_INDICES>0) QR_W = QR_W + KAPPA_PART*UII - KFST4_PART
 ENDIF
@@ -1562,5 +1616,196 @@ DO N = 1, N_RADCAL_ARRAY_SIZE
 ENDDO
 
 END FUNCTION GET_KAPPA
+
+!==================================================================================
+!Function to compute the absorption coefficient according to Bordbar et al. (2014)
+!==================================================================================
+REAL(EB) FUNCTION KAPPA_WSGG(TTMP,MOL_RATIO,PARTIAL_PRESSURE,JWSGG)
+
+INTEGER, INTENT(IN) :: JWSGG
+INTEGER :: NN
+REAL(EB), INTENT(IN) :: MOL_RATIO,PARTIAL_PRESSURE,TTMP
+REAL(EB) :: WSGG_D_ARRAY(1:4,0:4),WSGG_KAPPAP_ARRAY(1:5),SUM_KAPPA
+REAL(EB), ALLOCATABLE, DIMENSION(:) :: ZZ_ARRAY
+ALLOCATE(ZZ_ARRAY(N_TRACKED_SPECIES))
+
+!-------------------------------------------------------------------------
+!Compute the absorption coefficient within three intervals of molar ratio
+!-------------------------------------------------------------------------
+IF (MOL_RATIO.LT.0.01_EB) THEN					!Only CO2
+	!Mounting the kappa_p array
+	WSGG_KAPPAP_ARRAY(1:5) = (/ 3.388079E-2_EB, 4.544269E-1_EB, 4.680226_EB, 1.038439E2_EB, 0._EB /)
+	
+	!Getting the pressure-based absorption coefficient for the gray gas and transparent windows
+	SUM_KAPPA = WSGG_KAPPAP_ARRAY(JWSGG)
+
+ELSEIF (MOL_RATIO.GT.4._EB) THEN					!Only H2O
+	!Mounting the kappa_p array
+	WSGG_KAPPAP_ARRAY(1:5) = (/ 7.703541E-2_EB, 8.242941E-1_EB, 6.854761_EB, 6.593653E1_EB, 0._EB /)
+	
+	!Getting the pressure-based absorption coefficient for the gray gas and transparent windows
+	SUM_KAPPA = WSGG_KAPPAP_ARRAY(JWSGG)
+	
+ELSE														!CO2-H2O mixture
+	!Mounting the d's array
+	WSGG_D_ARRAY(1,0:4) = (/ 0.0340429_EB,  0.0652305_EB, -0.0463685_EB,  0.0138684_EB, -0.0014450_EB /)
+	WSGG_D_ARRAY(2,0:4) = (/ 0.3509457_EB,  0.7465138_EB, -0.5293090_EB,  0.1594423_EB, -0.0166326_EB /)
+	WSGG_D_ARRAY(3,0:4) = (/ 4.5707400_EB,  2.1680670_EB, -1.4989010_EB,  0.4917165_EB, -0.0542999_EB /)
+	WSGG_D_ARRAY(4,0:4) = (/ 109.81690_EB, -50.923590_EB,  23.432360_EB, -5.1638920_EB,  0.4393889_EB /)
+		
+	!Pressure-based absorption coefficient of the transparent windows
+	IF (JWSGG.EQ.(5)) THEN
+		SUM_KAPPA = 0._EB
+
+	!Pressure-based absorption coefficient of the gray gases
+	ELSE
+		SUM_KAPPA = 0._EB
+		DO NN = 0,4
+			SUM_KAPPA = SUM_KAPPA + WSGG_D_ARRAY(JWSGG,NN)*(MOL_RATIO**REAL(NN,EB))
+		ENDDO
+	ENDIF
+ENDIF
+
+KAPPA_WSGG = SUM_KAPPA*PARTIAL_PRESSURE
+	
+ENDFUNCTION KAPPA_WSGG
+
+!===================================================================================
+!Function to compute the temperature coefficient according to Bordbar et al. (2014)
+!===================================================================================
+REAL(EB) RECURSIVE FUNCTION A_WSGG(TTMP,MOL_RATIO,JWSGG) &
+	RESULT(A_FUNC_RES)
+		
+INTEGER,INTENT(IN) :: JWSGG
+INTEGER :: MM,NN
+REAL(EB),INTENT(IN) :: MOL_RATIO,TTMP
+REAL(EB) :: TREF,SUM_A,SUM_B,SUM_C,WSGG_B_ARRAY(1:4,0:4),WSGG_C_ARRAY(1:4,0:4,0:4)
+
+!------------------------
+!Parameters of the model
+!------------------------
+TREF = 1200._EB					!Reference temperature
+		
+!------------------------------------------------------------------
+!Computing the temperature coefficient for the transparent windows
+!------------------------------------------------------------------
+IF (JWSGG.EQ.(5)) THEN
+	SUM_A = 0._EB
+	DO MM=1,4
+		SUM_A = SUM_A + A_WSGG(TTMP,MOL_RATIO,MM)
+	ENDDO
+	A_FUNC_RES = 1._EB - SUM_A
+	
+ELSE
+!---------------------------------------------------------
+!Computing the temperature coefficient for the gray gases 
+!(within three intervals of molar ratio)
+!---------------------------------------------------------
+	IF (MOL_RATIO.LT.0.01_EB) THEN					!Only CO2
+		!Mounting the b's array
+		WSGG_B_ARRAY(1,0:4) = (/  8.425766E-1_EB, -1.442229E+0_EB,  1.286974E+0_EB, -5.202712E-1_EB,  7.581559E-2_EB /)
+		WSGG_B_ARRAY(2,0:4) = (/ -3.023864E-2_EB,  5.264245E-1_EB, -6.209696E-1_EB,  2.704755E-1_EB, -4.090690E-2_EB /)
+		WSGG_B_ARRAY(3,0:4) = (/  1.070243E-1_EB, -1.989596E-1_EB,  3.101602E-1_EB, -1.737230E-1_EB,  3.081180E-2_EB /)
+		WSGG_B_ARRAY(4,0:4) = (/  3.108972E-2_EB,  1.981489E-1_EB, -2.543676E-1_EB,  1.061331E-1_EB, -1.498231E-2_EB /)
+		
+		!Computing the polynomial
+		SUM_B = 0._EB
+		DO MM=0,4
+			SUM_B = SUM_B + WSGG_B_ARRAY(JWSGG,MM)*(TTMP/TREF)**(REAL(MM,EB))
+		ENDDO
+		
+	ELSEIF (MOL_RATIO.GT.4._EB) THEN					!Only H2O
+		!Mounting the b's array
+		WSGG_B_ARRAY(1,0:4) = (/  7.129509E-1_EB, -1.378353E+0_EB,  1.555028E+0_EB, -6.636291E-1_EB,  9.773674E-2_EB /)
+		WSGG_B_ARRAY(2,0:4) = (/  1.589917E-1_EB,  5.635578E-2_EB,  2.666874E-1_EB, -2.040335E-1_EB,  3.742408E-2_EB /)
+		WSGG_B_ARRAY(3,0:4) = (/ -1.196373E-1_EB,  1.349665E+0_EB, -1.544797E+0_EB,  6.397595E-1_EB, -9.153650E-2_EB /)
+		WSGG_B_ARRAY(4,0:4) = (/  3.078250E-1_EB, -6.003555E-1_EB,  4.441261E-1_EB, -1.468813E-1_EB,  1.824702E-2_EB /)
+
+		!Computing the polynomial
+		SUM_B = 0._EB
+		DO MM=0,4
+			SUM_B = SUM_B + WSGG_B_ARRAY(JWSGG,MM)*(TTMP/TREF)**(REAL(MM,EB))
+		ENDDO
+
+	ELSE
+		!Mounting the c's array
+		WSGG_C_ARRAY(1,0,0:4) = (/  0.7412956_EB, -0.5244441_EB,  0.5822860_EB, -0.2096994_EB,  0.0242031_EB /)
+		WSGG_C_ARRAY(1,1,0:4) = (/ -0.9412652_EB,  0.2799577_EB, -0.7672319_EB,  0.3204027_EB, -0.0391017_EB /)
+		WSGG_C_ARRAY(1,2,0:4) = (/  0.8531866_EB,  0.0823075_EB,  0.5289430_EB, -0.2468463_EB,  0.0310940_EB /)
+		WSGG_C_ARRAY(1,3,0:4) = (/ -0.3342806_EB,  0.1474987_EB, -0.4160689_EB,  0.1697627_EB, -0.0204066_EB /)
+		WSGG_C_ARRAY(1,4,0:4) = (/  0.0431436_EB, -0.0688622_EB,  0.1109773_EB, -0.0420861_EB,  0.0049188_EB /)
+		WSGG_C_ARRAY(2,0,0:4) = (/  0.1552073_EB, -0.4862117_EB,  0.3668088_EB, -0.1055508_EB,  0.0105857_EB /)
+		WSGG_C_ARRAY(2,1,0:4) = (/  0.6755648_EB,  1.4092710_EB, -1.3834490_EB,  0.4575210_EB, -0.0501976_EB /)
+		WSGG_C_ARRAY(2,2,0:4) = (/ -1.1253940_EB, -0.5913199_EB,  0.9085441_EB, -0.3334201_EB,  0.0384236_EB /)
+		WSGG_C_ARRAY(2,3,0:4) = (/  0.6040543_EB, -0.0553385_EB, -0.1733014_EB,  0.0791608_EB, -0.0098934_EB /)
+		WSGG_C_ARRAY(2,4,0:4) = (/ -0.1105453_EB,  0.0464663_EB, -0.0016129_EB, -0.0035398_EB,  0.0006121_EB /)
+		WSGG_C_ARRAY(3,0,0:4) = (/  0.2550242_EB,  0.3805403_EB, -0.4249709_EB,  0.1429446_EB, -0.0157408_EB /)
+		WSGG_C_ARRAY(3,1,0:4) = (/ -0.6065428_EB,  0.3494024_EB,  0.1853509_EB, -0.1013694_EB,  0.0130244_EB /)
+		WSGG_C_ARRAY(3,2,0:4) = (/  0.8123855_EB, -1.1020090_EB,  0.4046178_EB, -0.0811822_EB,  0.0062981_EB /)
+		WSGG_C_ARRAY(3,3,0:4) = (/ -0.4532290_EB,  0.6784475_EB, -0.3432603_EB,  0.0883088_EB, -0.0084152_EB /)
+		WSGG_C_ARRAY(3,4,0:4) = (/  0.0869309_EB, -0.1306996_EB,  0.0741446_EB, -0.0202929_EB,  0.0020110_EB /)
+		WSGG_C_ARRAY(4,0,0:4) = (/ -0.0345199_EB,  0.2656726_EB, -0.1225365_EB,  0.0300151_EB, -0.0028205_EB /)
+		WSGG_C_ARRAY(4,1,0:4) = (/  0.4112046_EB, -0.5728350_EB,  0.2924490_EB, -0.0798076_EB,  0.0079966_EB /)
+		WSGG_C_ARRAY(4,2,0:4) = (/ -0.5055995_EB,  0.4579559_EB, -0.2616436_EB,  0.0764841_EB, -0.0079084_EB /)
+		WSGG_C_ARRAY(4,3,0:4) = (/  0.2317509_EB, -0.1656759_EB,  0.1052608_EB, -0.0321935_EB,  0.0033870_EB /)
+		WSGG_C_ARRAY(4,4,0:4) = (/ -0.0375491_EB,  0.0229520_EB, -0.0160047_EB,  0.0050463_EB, -0.0005364_EB /)
+	
+		!Computing the polynomials
+		SUM_B = 0._EB
+		DO MM=0,4
+			SUM_C = 0._EB
+			DO NN=0,4
+				SUM_C = SUM_C + WSGG_C_ARRAY(JWSGG,MM,NN)*MOL_RATIO**(REAL(NN,EB))
+			ENDDO
+			SUM_B = SUM_B + SUM_C*(TTMP/TREF)**(REAL(MM,EB))
+		ENDDO
+	ENDIF		
+	A_FUNC_RES = SUM_B
+	
+ENDIF
+
+ENDFUNCTION A_WSGG
+
+!=======================================================
+!Function to get the volume fraction of a given species
+!=======================================================
+REAL(EB) FUNCTION GET_VOLUME_FRACTION(SPECIES_NAME,ZZ_ARRAY,R_MIX)
+
+USE MESH_POINTERS
+USE PHYSICAL_FUNCTIONS, ONLY: GET_MASS_FRACTION
+CHARACTER(*), INTENT(IN) :: SPECIES_NAME
+INTEGER :: NS
+REAL(EB), INTENT(IN) :: R_MIX,ZZ_ARRAY(:)
+REAL(EB) :: MASS_FRACTION,RCON
+
+SPECIES_LOOP: DO NS = 1, N_SPECIES
+	IF (TRIM(SPECIES_NAME)==TRIM(SPECIES(NS)%ID)) THEN
+		CALL GET_MASS_FRACTION(ZZ_ARRAY,NS,MASS_FRACTION)				!Get the mass fraction of an individual species
+		RCON = SPECIES(NS)%RCON													!Gas constant of the individual species
+		GET_VOLUME_FRACTION = RCON*MASS_FRACTION/R_MIX					!Molar fraction of the individual species
+		EXIT SPECIES_LOOP
+	ENDIF
+ENDDO SPECIES_LOOP
+
+END FUNCTION
+
+!================================================
+!Function to get the volume fraction of a given
+!species for verification and validation studies
+!================================================
+REAL(EB) FUNCTION GET_RESTART_VOLUME_FRACTION(SPECIES_NAME,II,JJ,KK)
+
+USE MESH_POINTERS
+CHARACTER(*), INTENT(IN) :: SPECIES_NAME
+INTEGER, INTENT(IN) :: II,JJ,KK
+
+SELECT CASE(TRIM(SPECIES_NAME))
+	CASE('CARBON DIOXIDE')
+		GET_RESTART_VOLUME_FRACTION = CO2_MOLAR_FRACTION(II,JJ,KK)
+	CASE('WATER VAPOR')
+		GET_RESTART_VOLUME_FRACTION = H2O_MOLAR_FRACTION(II,JJ,KK)
+END SELECT
+
+END FUNCTION
 
 END MODULE RAD
