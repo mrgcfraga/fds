@@ -165,6 +165,12 @@ ALLOCATE(  M%U_LEAK(0:N_ZONE),STAT=IZERO)
 CALL ChkMemErr('INIT','U_LEAK',IZERO)
 M%U_LEAK = 0._EB
 
+! Allocate CO2 and H2O molar fraction arrays
+ALLOCATE(M%CO2_MOLAR_FRACTION(0:IBP1,0:JBP1,0:KBP1),STAT=IZERO)
+CALL ChkMemErr('INIT','CO2_MOLAR_FRACTION',IZERO)
+ALLOCATE(M%H2O_MOLAR_FRACTION(0:IBP1,0:JBP1,0:KBP1),STAT=IZERO)
+CALL ChkMemErr('INIT','H2O_MOLAR_FRACTION',IZERO)
+
 ! Allocate species arrays
 
 IF (.NOT.EVACUATION_ONLY(NM)) THEN
@@ -3884,7 +3890,9 @@ ENDIF
 DO K=KMIN,KMAX
    DO J=JMIN,JMAX
       DO I=IMIN,IMAX
-         READ(LU_UVW,*,IOSTAT=IERROR) U(I,J,K),V(I,J,K),W(I,J,K)
+         READ(LU_UVW,*,IOSTAT=IERROR) U(I,J,K),V(I,J,K),W(I,J,K),&
+				TMP(I,J,K),CO2_MOLAR_FRACTION(I,J,K),H2O_MOLAR_FRACTION(I,J,K)	
+				!Added the local temperature and CO2 and H2O molar fractions to be read here
          IF (IERROR/=0) THEN
             U(I,J,K)=0._EB
             V(I,J,K)=0._EB
