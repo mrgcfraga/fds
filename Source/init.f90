@@ -165,12 +165,6 @@ ALLOCATE(  M%U_LEAK(0:N_ZONE),STAT=IZERO)
 CALL ChkMemErr('INIT','U_LEAK',IZERO)
 M%U_LEAK = 0._EB
 
-! Allocate CO2 and H2O molar fraction arrays
-ALLOCATE(M%CO2_MOLAR_FRACTION(0:IBP1,0:JBP1,0:KBP1),STAT=IZERO)
-CALL ChkMemErr('INIT','CO2_MOLAR_FRACTION',IZERO)
-ALLOCATE(M%H2O_MOLAR_FRACTION(0:IBP1,0:JBP1,0:KBP1),STAT=IZERO)
-CALL ChkMemErr('INIT','H2O_MOLAR_FRACTION',IZERO)
-
 ! Allocate species arrays
 
 IF (.NOT.EVACUATION_ONLY(NM)) THEN
@@ -3852,12 +3846,14 @@ SUBROUTINE UVW_INIT(NM,FN_UVW)
 ! Read UVW file
 
 USE COMP_FUNCTIONS, ONLY: GET_FILE_NUMBER,SHUTDOWN
+USE PHYSICAL_FUNCTIONS, ONLY: GET_SPECIFIC_GAS_CONSTANT
 INTEGER  :: I,J,K,II,JJ,KK,IW,IOR,LU_UVW,IERROR,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX
 INTEGER, INTENT(IN) :: NM
 CHARACTER(80), INTENT(IN) :: FN_UVW
 CHARACTER(MESSAGE_LENGTH) :: MESSAGE
 CHARACTER(3) :: STR
 TYPE(WALL_TYPE), POINTER :: WC=>NULL()
+REAL(EB) :: MW_MIXTURE,XCO2,XH2O,XSOOT,ZZ_GET(1:N_TRACKED_SPECIES)
 
 CALL POINT_TO_MESH(NM)
 
@@ -3891,8 +3887,24 @@ DO K=KMIN,KMAX
    DO J=JMIN,JMAX
       DO I=IMIN,IMAX
          READ(LU_UVW,*,IOSTAT=IERROR) U(I,J,K),V(I,J,K),W(I,J,K),&
-				TMP(I,J,K),CO2_MOLAR_FRACTION(I,J,K),H2O_MOLAR_FRACTION(I,J,K)	
-				!Added the local temperature and CO2 and H2O molar fractions to be read here
+				TMP(I,J,K),XCO2,XH2O,XSOOT					!Added the local temperature and participating species 
+																	!molar fractions to be read here
+				
+				!Molecular weight of the mixture
+				MW_MIXTURE = XCO2*44.0095_EB + XH2O*18.01528_EB + XSOOT*10.910424_EB + &
+					(1._EB - XCO2 - XH2O - XSOOT)*28.0134_EB			
+				
+				!Mass fractions
+				ZZ(I,J,K,2) = XCO2*44.0095_EB/MW_MIXTURE
+				ZZ(I,J,K,3) = XH2O*18.01528_EB/MW_MIXTURE
+				ZZ(I,J,K,4) = XSOOT*10.910424_EB/MW_MIXTURE
+				ZZ(I,J,K,1) = 1._EB - ZZ(I,J,K,2) - ZZ(I,J,K,3) - ZZ(I,J,K,4)
+
+				!Recompute the specific gas constant of the mixture
+				!(otherwise the volume fraction will be wrongly computed)
+				ZZ_GET(1:N_TRACKED_SPECIES) = ZZ(I,J,K,1:N_TRACKED_SPECIES)
+            CALL GET_SPECIFIC_GAS_CONSTANT(ZZ_GET,RSUM(I,J,K))
+            
          IF (IERROR/=0) THEN
             U(I,J,K)=0._EB
             V(I,J,K)=0._EB
