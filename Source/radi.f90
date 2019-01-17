@@ -886,23 +886,15 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
          DO J=1,JBAR
             DO I=1,IBAR
                IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
-               IF (UVW_RESTART) THEN																			!For the verification cases
-						MOL_RAT = GET_RESTART_VOLUME_FRACTION('WATER VAPOR',I,J,K)/&
-							(GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',I,J,K) + TWO_EPSILON_EB)		!Molar ratio
-						TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))		!Total pressure
-						PARTIAL_P = TOTAL_P*(GET_RESTART_VOLUME_FRACTION('WATER VAPOR',I,J,K) + &
-							GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',I,J,K))/P_STP						!Partial pressure of the CO2-H2O mixture
-               ELSE																									!For general computations
-						Z_ARRAY(1:N_TRACKED_SPECIES) = ZZ(I,J,K,1:N_TRACKED_SPECIES)
-						R_MIXTURE = RSUM(I,J,K)
-						MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
-							(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE)+TWO_EPSILON_EB)
-						TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))
-						PARTIAL_P = TOTAL_P*(GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE) + &
-							GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE))/P_STP
-               ENDIF
-					BBF = A_WSGG(TMP(I,J,K),MOL_RAT,IBND)											!Temperature coefficient for the jth gas
-					KAPPA_GAS(I,J,K) = KAPPA_WSGG(TMP(I,J,K),MOL_RAT,PARTIAL_P,IBND)		!Absorption coefficient for the jth gas
+					Z_ARRAY(1:N_TRACKED_SPECIES) = ZZ(I,J,K,1:N_TRACKED_SPECIES)						!Mass fraction of the tracked species
+					R_MIXTURE = RSUM(I,J,K)																			!Specific gas constant of the mixture
+					MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+						(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE)+TWO_EPSILON_EB)	!Molar ratio
+					TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))		!Total pressure
+					PARTIAL_P = TOTAL_P*(GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE) + &
+						GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE))/P_STP					!Partial pressure of the CO2-H2O mixture
+					BBF = A_WSGG(TMP(I,J,K),MOL_RAT,IBND)														!Temperature coefficient for the jth gas
+					KAPPA_GAS(I,J,K) = KAPPA_WSGG(TMP(I,J,K),MOL_RAT,PARTIAL_P,IBND)					!Absorption coefficient for the jth gas
                KFST4_GAS(I,J,K) = BBF*KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4
             ENDDO
          ENDDO
@@ -982,17 +974,11 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
          ELSE
             IF (WIDE_BAND_MODEL) BBF = BLACKBODY_FRACTION(WL_LOW(IBND),WL_HIGH(IBND),WALL(IW)%ONE_D%TMP_F)
             IF (WSGG_MODEL) THEN
-					IF (UVW_RESTART) THEN								!For the verification cases
-						MOL_RAT = GET_RESTART_VOLUME_FRACTION('WATER VAPOR',WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG)/&
-							(GET_RESTART_VOLUME_FRACTION('CARBON DIOXIDE',WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG) + &
-								TWO_EPSILON_EB)
-					ELSE														!For general computations
-						Z_ARRAY(1:N_TRACKED_SPECIES) = &
-							ZZ(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG,1:N_TRACKED_SPECIES)
-						R_MIXTURE = RSUM(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG)
-						MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
-							(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE) + TWO_EPSILON_EB)
-					ENDIF
+					Z_ARRAY(1:N_TRACKED_SPECIES) = &
+						ZZ(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG,1:N_TRACKED_SPECIES)
+					R_MIXTURE = RSUM(WALL(IW)%ONE_D%IIG,WALL(IW)%ONE_D%JJG,WALL(IW)%ONE_D%KKG)
+					MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+						(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE) + TWO_EPSILON_EB)
 					BBF = A_WSGG(WALL(IW)%ONE_D%TMP_F,MOL_RAT,IBND)			!Temperature coefficient for the jth gray gas in the boundary 
             ENDIF																		!(use information of the cell adjacent to the boundary)
             SF  => SURFACE(WALL(IW)%SURF_INDEX)
@@ -1786,25 +1772,6 @@ SPECIES_LOOP: DO NS = 1, N_SPECIES
 		EXIT SPECIES_LOOP
 	ENDIF
 ENDDO SPECIES_LOOP
-
-END FUNCTION
-
-!================================================
-!Function to get the volume fraction of a given
-!species for verification and validation studies
-!================================================
-REAL(EB) FUNCTION GET_RESTART_VOLUME_FRACTION(SPECIES_NAME,II,JJ,KK)
-
-USE MESH_POINTERS
-CHARACTER(*), INTENT(IN) :: SPECIES_NAME
-INTEGER, INTENT(IN) :: II,JJ,KK
-
-SELECT CASE(TRIM(SPECIES_NAME))
-	CASE('CARBON DIOXIDE')
-		GET_RESTART_VOLUME_FRACTION = CO2_MOLAR_FRACTION(II,JJ,KK)
-	CASE('WATER VAPOR')
-		GET_RESTART_VOLUME_FRACTION = H2O_MOLAR_FRACTION(II,JJ,KK)
-END SELECT
 
 END FUNCTION
 
