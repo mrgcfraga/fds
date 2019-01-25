@@ -779,9 +779,9 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
    IF (NUMBER_SPECTRAL_BANDS==1) THEN
       BBFA = 1._EB
    ELSEIF (WSGG_MODEL) THEN																			!Computing the temperature coefficient in the WSGG model at ambient temperature
-		Z_ARRAY(1:N_TRACKED_SPECIES) = SPECIES_MIXTURE(1:N_TRACKED_SPECIES)%ZZ0			!Mass fraction of the tracked species in the outside ambient
-		R_MIXTURE = RSUM0																					!Specific gas constant of the outside ambient
-		MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
+      Z_ARRAY(1:N_TRACKED_SPECIES) = SPECIES_MIXTURE(1:N_TRACKED_SPECIES)%ZZ0			!Mass fraction of the tracked species in the outside ambient
+      R_MIXTURE = RSUM0																					!Specific gas constant of the outside ambient
+      MOL_RAT = GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE)/&
 			(GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE)+TWO_EPSILON_EB)	!Molar ratio
 		BBFA = A_WSGG(TMPA,MOL_RAT,IBND)
    ELSE
@@ -894,11 +894,31 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 					PARTIAL_P = TOTAL_P*(GET_VOLUME_FRACTION('WATER VAPOR',Z_ARRAY,R_MIXTURE) + &
 						GET_VOLUME_FRACTION('CARBON DIOXIDE',Z_ARRAY,R_MIXTURE))/P_STP					!Partial pressure of the CO2-H2O mixture
 					BBF = A_WSGG(TMP(I,J,K),MOL_RAT,IBND)														!Temperature coefficient for the jth gas
-					KAPPA_GAS(I,J,K) = KAPPA_WSGG(TMP(I,J,K),MOL_RAT,PARTIAL_P,IBND)					!Absorption coefficient for the jth gas
-               KFST4_GAS(I,J,K) = BBF*KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4
+					KAPPA_GAS(I,J,K) = KAPPA_WSGG(TMP(I,J,K),MOL_RAT,PARTIAL_P,IBND) + &
+						KAPPA_SOOT(GET_VOLUME_FRACTION('SOOT',Z_ARRAY,R_MIXTURE),TMP(I,J,K))			!Absorption coefficient for the jth gas
+               KFST4_GAS(I,J,K) = BBF*KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4._EB
+               
+               IF (CHI_R(I,J,K)*Q(I,J,K)>QR_CLIP) THEN													!Precomputation of quantities for the RTE
+                     VOL = R(I)*DX(I)*DY(J)*DZ(K)															!source term correction
+                     RAD_Q_SUM = RAD_Q_SUM + (BBF*CHI_R(I,J,K)*Q(I,J,K) + &
+											KAPPA_GAS(I,J,K)*UIID(I,J,K,IBND))*VOL
+                     KFST4_SUM = KFST4_SUM + KFST4_GAS(I,J,K)*VOL
+               ENDIF
             ENDDO
          ENDDO
       ENDDO
+      
+      !Correct the source term in the RTE based on user-specified RADIATIVE_FRACTION on REAC
+		DO K=1,KBAR
+            DO J=1,JBAR
+               DO I=1,IBAR
+                  IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
+                  IF (CHI_R(I,J,K)*Q(I,J,K)>QR_CLIP) THEN
+							KFST4_GAS(I,J,K) = KFST4_GAS(I,J,K)*RTE_SOURCE_CORRECTION_FACTOR
+						ENDIF
+               ENDDO
+            ENDDO
+         ENDDO
    
    ELSE WIDE_BAND_MODEL_IF
 
@@ -1749,6 +1769,18 @@ ELSE
 ENDIF
 
 ENDFUNCTION A_WSGG
+
+!====================================================
+!Function to compute the gray absorption coefficient 
+!of soot (same function as the one used by Fluent)
+!====================================================
+REAL(EB) FUNCTION KAPPA_SOOT(FVS,TTMP)
+
+	REAL(EB),INTENT(IN) :: FVS,TTMP
+	
+	KAPPA_SOOT = 1232.4_EB*SOOT_DENSITY*FVS*(1._EB+4.8E-4_EB*(TTMP-2000._EB))
+
+ENDFUNCTION KAPPA_SOOT
 
 !=======================================================
 !Function to get the volume fraction of a given species
