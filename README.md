@@ -20,8 +20,9 @@ Here are some other useful links:
 
 [Discussion Forum](https://groups.google.com/forum/#!forum/fds-smv)
 
-[Issues](https://github.com/firemodels/fds/issues)
+[FDS Issues](https://github.com/firemodels/fds/issues)
 
 [Smokeview Issues](https://github.com/firemodels/smv/issues)
 
 Pull requests welcome!
+

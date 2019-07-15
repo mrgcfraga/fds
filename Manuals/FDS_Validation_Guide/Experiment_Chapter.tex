@@ -28,6 +28,14 @@ The fire source was a natural gas diffusion burner.  The burner surface was hori
 \label{ATF Drawing}
 \end{figure}
 
+
+\section{Atmospheric Dispersion Correlations}
+\label{Atmospheric_Dispersion_Description}
+
+A common exercise in atmospheric dispersion modeling is predicting the plume rise height of stack emissions. Stull~\cite{Stull:2000} presents an empirical correlation for plume rise height from a smoke stack in a stable atmospheric boundary layer. Details of the correlation and simulation are found in Section~\ref{Plume_Height_Discussion}.
+
+
+
 \section{Backward Facing Step}
 \label{Backward_Facing_Step_Description}
 
@@ -769,6 +777,62 @@ Following is additional information provided by the test director, Richard Peaco
 \end{figure}
 
 
+\section{NIST Composite Beam Experiments}
+\label{NIST_Composite_Beam_Description}
+
+A set of experiments was conducted in the Large Fire Laboratory at NIST to study the behavior of long-span steel-concrete composite floor beams designed and constructed following U.S. building codes and standards~\cite{Ramesh:TNXXXX}. The composite beam consisted of a 12.8~m long W18$\times$35 steel beam and an 16~cm thick lightweight concrete slab cast on top of 7.6~cm deep ribbed steel decking. Drawings of the compartment are shown in Figs.~\ref{NIST_Composite_Beam_Drawing_1} through \ref{NIST_Composite_Beam_Drawing_3}.
+
+Simultaneous mechanical and fire loading was applied to the specimens. The measurements focused on evaluation of the characteristics of the fire loading, temperatures, and structural responses of the specimens to fires.
+
+\subsubsection{Modeling Notes}
+
+The simulations of the NIST Composite Beam experiments are performed with 5~cm grid cells and 32 meshes. The calculations are sped up by a factor of 10 using {\ct TIME\_SHRINK\_FACTOR=10}, whereby a 60~min experiment is simulated in 6~min of real time because the heat release rate is held steady for most of the experiment. The specific heats of all solid materials are reduced by a factor of 10 automatically to account for the change in time scale.
+
+Because these experiments involve a global equivalence ratio of approximately 1, the two-step simple chemistry model is used, where soot and CO are produced when the fire becomes under-ventilated.
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_1}
+\caption[Elevation view of NIST Composite Beam experiments]{Elevation view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_1}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_2}
+\caption[Plan view of NIST Composite Beam experiments]{Plan view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_2}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_3}
+\caption[Side view of NIST Composite Beam experiments]{Side view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_3}
+\end{sidewaysfigure}
+
+\section{NIST E119 Compartment Experiments}
+\label{NIST_E119_Compartment_Description}
+
+In December 2018, three fire experiments were conducted in a compartment approximately 10.8~m wide, 7.0~m deep and 3.8~m high, constructed in the Large Fire Laboratory of NIST~\cite{Ana:TNXXXX}. The experiments were designed to test different types of floor assemblies. Two experiments, designed as replicates, lasted 15~min, and the third lasted 75~min. Four natural gas burners generated a peak heat release rate of approximately 10~MW in the 75~min experiments. The measured average upper layer gas temperature was comparable with that prescribed in the ASTM~E119 standard~\cite{E119}. Drawings of the compartment are shown in Figs.~\ref{NIST_E119_Compartment_Drawing_1} through~\ref{NIST_E119_Compartment_Drawing_3}.
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=0.65\textwidth, angle =90]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_TCTrees}
+\caption[Plan view of NIST E119 Compartment experiment]{Plan view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_1}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_SWall}
+\caption[Elevation view of NIST E119 Compartment experiment]{Elevation view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_2}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_NWall}
+\caption[Elevation view of NIST E119 Compartment experiment]{Elevation view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_3}
+\end{sidewaysfigure}
+
+\FloatBarrier
+
 \section{NIST Douglas Firs}
 \label{NIST_Douglas_Firs_Description}
 
@@ -1465,6 +1529,14 @@ Test    & Width     & Height        & $\dot{Q}$  & Location     & Test  & Width 
 \FloatBarrier
 
 
+\section{SWJTU Tunnel Experiments}
+\label{SSJTU_Tunnel_Description}
+
+Fires fueled by methanol and propane ranging from 5.6~kW to 16.8~kW were conducted in a 1:20 reduced-scale tunnel at Southwest Jiaotong University, Chengdu, China~\cite{Wang:TUST2019}. The tunnel was 0.45~m wide, 0.23~m high and 20.8~m long. The burner was located at the center of the tunnel and both ends were open. Temperatures and gas concentrations (i.e., O$_2$, CO and CO$_2$) were measured. The results showed that both methanol and propane fires self-extinguished in the 20.8~m long tunnel within approximately 10~min, except for the 5.6~kW methanol fire. The larger the heat release rate, the faster the self-extinction of the fire. The oxygen concentrations in the 20.8~m long tunnel decreased to approximately 12~\% except for the 5.6~kW methanol fire, which remained well above the limiting oxygen concentration.  Self-extinction was not observed for fires of the same heat release rates in a 10~m long tunnel of the same cross section. The oxygen concentrations in the 10~m long tunnel decreased to approximately 17~\%.  In the long tunnel with large fire sizes, the smoke layer descended to the floor, inhibiting the supply of fresh air reaching the fire.
+
+
+
+
 \section{UL/NIST Vent Experiments}
 \label{UL_NIST_Vents_Description}
 
@@ -1791,12 +1863,126 @@ II-12 & C  & All Open at Start       & 23 & 0:58 & 4:55 & 119.0 &246.2 \\ \hline
 \FloatBarrier
 
 
-\section{UL/NIJ Houses}
+\section{UL/NIJ House Experiments}
 \label{UL_NIJ_Description}
 
-The Firefighter Safety Research Institute (FSRI) of Underwriters Laboratory (UL), with support from the National Institute of Justice (NIJ), conducted fire experiments in a one-story ranch-style house and a two-story colonial-style house in the large fire facility at Northbrook, Illinois, in 2016 and 2017. The goal of the experiments was to determine the effect of ventilation on fire patterns in fully-furnished homes. As part of the project, a natural gas burner was positioned within the unfurnished structures to evaluate changes in flow patterns as various doors and windows were opened and closed. The analysis of this data is still underway, but some results for the one-story house are included.
+The Firefighter Safety Research Institute (FSRI) of Underwriters Laboratory (UL), with support from the National Institute of Justice (NIJ), conducted fire experiments in a one-story ranch-style house and a two-story colonial-style house in the large fire facility at Northbrook, Illinois, in 2016 and 2017~\cite{Madrzykowski:2019}. The goal of the experiments was to determine the effect of ventilation on fire patterns in fully-furnished homes. As part of the project, a natural gas burner was positioned within the unfurnished structures to evaluate changes in flow patterns as various doors and windows were opened and closed. The test structures were instrumented with thermocouple trees, pressure transducers, and bi-directional probes. The floor plan for the single story ranch-style house is included in Fig.~\ref{Ranch_layout}, and plans for the two story colonial-style house in Fig.~\ref{Colonial_layout}. The ceiling was 2.4~m above the floor in the ranch-style house. The colonial-style house featured an atrium with a 5.6~m ceiling height. The first story ceiling in the colonial-style house was 2.5~m above the floor, and the second story ceiling was 2.8~m above the floor.
+
+The leakage area in the single story structure was measured to be 0.08~m$^2$ at 10~Pa. The leakage area in the two story structure was measured to be 0.18~m$^2$ at 10~Pa.
+
+The natural gas burner in each set of experiments had dimensions of 0.6~m by 0.6~m, and the surface of the burner was approximately 0.6~m above the floor. The heat release rate for the single story ranch house was 250~kW, and 500~kW for the two story colonial. The locations of the burner in each house are indicated in the floor plans. The labels for the measurement devices in the one and two story houses are listed in Tables~\ref{Ranch_devices} and~\ref{Colonial_devices}, respectively. Three experiments with unique sequences of events (e.g. opening doors and windows) were conducted in each style of house. All experiments began with all exterior doors and windows closed and the times at which each door and window was opened are listed Table~\ref{Ranch_events} and~\ref{Colonial_events}.
+
+\begin{figure}[p]
+\includegraphics[width=\textwidth]{FIGURES/UL_NIJ_Houses/UL_NIJ_Ranch_layout}
+\caption[Layout of the one story ranch-style house in the UL/NIJ experiments]{Layout of the one story ranch-style house in the UL/NIJ experiments.}
+\label{Ranch_layout}
+\end{figure}
+
+\begin{figure}[p]
+\includegraphics[width=\textwidth]{FIGURES/UL_NIJ_Houses/UL_NIJ_Colonial_layout}
+\caption{Geometry of UL NIJ Colonial-style House}
+\label{Colonial_layout}
+\end{figure}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c|l||c|l||c|l|}
+\hline
+Temp.           	& Location 			& Pressure          	& Location 		& Velocity              & Location 	\\ \hline \hline
+1TC  				& Bedroom 1 		& 1PT 					& Bedroom 1 	& 1BDP 					& Window E 	\\ \hline
+2TC  				& Bedroom 2 		& 2PT 					& Bedroom 2 	& 2BDP 					& Window D 	\\ \hline
+3TC  				& Bedroom 3 		& 3PT 					& Bedroom 3 	& 3BDP 					& Window B 	\\ \hline
+4TC  				& Hallway 			& 4PT 					& Living Room 	& 4BDP 					& Hallway 	\\ \hline
+5TC  				& Living Room 		& 5PT 					& Kitchen 		& 5BDP 					& Window F 	\\ \hline
+6TC  				& Dining Room 		& 6PT 					& Dining Room 	& 6BDP 					& Front Door\\ \hline
+7TC  				& Kitchen (East) 	& \multicolumn{2}{r||}{}				& 7BDP 					& Window A 	\\ \cline{1-2} \cline{5-6}
+8TC  				& Kitchen (West) 	& \multicolumn{2}{r}{}					& \multicolumn{2}{r|}{}  			\\ \hline
+\end{tabular}
+\end{center}
+\caption[Locations of measurement devices in the UL/NIJ ranch-style house]
+{Locations of measurement devices in the UL/NIJ ranch-style house.}
+\label{Ranch_devices}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c|l||c|l||c|l|}
+\hline
+Temp.           	& Location 					& Pressure          	& Location 			& Velocity              & Location 		\\ \hline \hline
+1TC  				& Master Bedroom 			& 1PT 					& Master Bedroom 	& 1BDP 					& Front Door 	\\ \hline
+2TC  				& Bedroom 2 				& 2PT 					& Bedroom 2 		& 2BDP 					& Window J 		\\ \hline
+3TC  				& Bedroom 3 				& 3PT 					& Bedroom 3 		& 3BDP 					& Window K 		\\ \hline
+4TC  				& Bedroom 4 				& 4PT 					& Bedroom 4 		& 4BDP 					& Window L 		\\ \hline
+5TC  				& 2nd Floor Hallway (East) 	& 5PT 					& Front Corridor 	& 5BDP 					& Window E 		\\ \hline
+6TC  				& 2nd Floor Hallway (Middle)& 6PT 					& Living Room 		& 6BDP 					& Window A 		\\ \hline
+7TC  				& Family Room (West Corner)	& 8PT 					& Den 				& \multicolumn{2}{r|}{}  				\\ \cline{1-4}
+8TC  				& Family Room (Center) 		& 9PT 					& Family Room 		& \multicolumn{2}{r|}{}  				\\ \cline{1-4}
+9TC  				& Den 						& 10PT 					& Kitchen 			& \multicolumn{2}{r|}{} 				\\ \cline{1-4}
+10TC 				& Living Room 				& \multicolumn{4}{r|}{}											 					\\ \cline{1-2}
+11TC  				& Under 2nd Floor Hallway 	& \multicolumn{4}{r|}{} 															\\ \cline{1-2}
+12TC  				& Foyer 					& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+13TC  				& Dining Room 				& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+14TC  				& Laundry Room 				& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+15TC  				& Kitchen 					& \multicolumn{4}{r|}{} 											 				\\ \hline
+\end{tabular}
+\end{center}
+\caption[Locations of measurement devices in the UL/NIJ colonial-style house]
+{Locations of measurement devices in the UL/NIJ colonial-style house.}
+\label{Colonial_devices}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c||c|c|c|}
+\hline
+Event 			& Test 1  	& Test 2 	& Test 5 	\\ \hline \hline
+Front Door Open & 300 s 	& 1200 s 	& 1290 s 	\\ \hline
+Back Door Open  & 1275 s 	& 1860 s 	& 300 s 	\\ \hline
+Window A Open  	& 1260 s 	& 1845 s 	& - 		\\ \hline
+Window B Open  	& 1245 s 	& 1830 s 	& - 		\\ \hline
+Window C Open  	& 1230 s 	& 900 s 	& - 		\\ \hline
+Window D Open  	& 1215 s 	& - 		& 600 s 	\\ \hline
+Window E Open  	& 600 s 	& 600 s 	& - 		\\ \hline
+Window F Open  	& 1200 s 	& 1815 s 	& 1200 s 	\\ \hline
+Window G Open  	& 1300 s 	& 1875 s 	& - 		\\ \hline
+Burner Off 		& 900 s 	& 1500 s 	& 900 s 	\\ \hline
+\end{tabular}
+\end{center}
+\caption[Sequence of events for the one story ranch-style house in the UL/NIJ experiments]
+{Sequence of events for the one story ranch-style house in the UL/NIJ experiments.}
+\label{Ranch_events}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c||c|c|c|}
+\hline
+Event 			& Test 1  	& Test 4 	& Test 6 	\\ \hline \hline
+Front Door Open & 600 s 	& 600 s 	& 1200 s 	\\ \hline
+Back Door Open  & - 		& - 		& - 		\\ \hline
+Window A Open  	& - 		& - 		& 900 s 	\\ \hline
+Window B Open  	& - 		& 900 s 	& - 		\\ \hline
+Window C Open  	& - 		& - 		& - 		\\ \hline
+Window D Open  	& - 		& - 		& - 		\\ \hline
+Window E Open  	& - 		& - 		& - 		\\ \hline
+Window F Open  	& - 		& - 		& - 		\\ \hline
+Window G Open  	& - 		& - 		& - 		\\ \hline
+Window H Open  	& - 		& - 		& - 		\\ \hline
+Window I Open  	& - 		& - 		& - 		\\ \hline
+Window J Open  	& - 		& - 		& - 		\\ \hline
+Window K Open  	& 900 s 	& 1260 s 	& 600 s 	\\ \hline
+Window L Open  	& 1200 s 	& 1320 s 	& - 		\\ \hline
+Window M Open  	& - 		& - 		& - 		\\ \hline
+Burner Off 		& 1500 s 	& 1200 s 	& 1500 s 	\\ \hline
+\end{tabular}
+\end{center}
+\caption[Sequence of events for the two story colonial-style house in the UL/NIJ experiments]
+{Sequence of events for the two story colonial-style house in the UL/NIJ experiments.}
+\label{Colonial_events}
+\end{table}
 
 
+\FloatBarrier
 
 \section{Ulster SBI Corner Heat Flux Measurements}
 \label{Ulster_SBI_Description}
@@ -1873,6 +2059,12 @@ Extinction of the fire is achieved using the {\em critical flame temperature} co
 \label{USCG_HAI_Water_Mist_Description}
 
 The U.S. Coast Guard sponsored a series of experiments to assess the fire suppression capabilities of a variety of water mist systems in a variety of ship board configurations. The experiments were conducted in 1999 by Hughes Associates, Inc., in a simulated machinery space aboard the test vessel {\em State of Maine} at the USCG Fire and Safety Test Detachment, Mobile, Alabama~\cite{Back:USCG1999}. The space had nominal dimensions of 7~m by 5~m by 3~m, containing two steel engine mock-ups each measuring 3~m by 1~m by 1.5~m. The space was equipped with a door for natural ventilation and a forced ventilation system providing approximately 15 air changes per hour. Five commercially available water mist systems were evaluated. The obstructed heptane spray fires ranged in size from approximately 250~kW to 1~MW.
+
+
+\section{USFS/Catchpole Experiments}
+\label{USFS_Catchpole_Description}
+
+The U.S. Forest Service and collaborators from the University of New South Wales, Australia, conducted 354 fire experiments in a wind tunnel with a cross section of 3~m by 3~m~\cite{Catchpole:CST1998}. The tunnel is part of the Intermountain Fire Sciences Laboratory in Missoula, Montana. The fires involved four different fuel species, a range of fuel bed depths, packing ratios, moisture contents and wind speeds. The fuels were regular and coarse excelsior ({\em Populus tranulos}), and pine needles and heartwood sticks ({\em Pinus ponderosa}). The vegetation was placed in a 1~m wide and 8~m long tray. An approximately 5~cm wide tray of ethanol liquid was positioned at one end, and the fire spread rate was measured using photocells and video analysis.
 
 
 
