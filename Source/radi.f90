@@ -51,6 +51,11 @@ RPI_SIGMA  = RPI*SIGMA              ! Stefan-Boltzmann constant divided by PI (R
 NRA = NUMBER_RADIATION_ANGLES
 NSB = NUMBER_SPECTRAL_BANDS
 
+! Allocate and initialize arrays for the RTE source correction calculation
+ALLOCATE(RTE_SOURCE_CORRECTION_FACTOR(1:NSB))
+ALLOCATE(RAD_Q_SUM(1:NSB))
+ALLOCATE(KFST4_SUM(1:NSB))
+
 ! Set the opening angle of the cylindrical geometry equal to the azimuthal angle
 
 IF (CYLINDRICAL) DPHI0 = PI/REAL(NRP(1))
@@ -902,9 +907,9 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
 
                IF (CHI_R(I,J,K)*Q(I,J,K)>QR_CLIP) THEN ! Precomputation of quantities for the RTE source term correction
                      VOL = R(I)*DX(I)*DY(J)*DZ(K)
-                     RAD_Q_SUM = RAD_Q_SUM + (BBF*CHI_R(I,J,K)*Q(I,J,K) + &
-                                 KAPPA_GAS(I,J,K)*UIID(I,J,K,IBND))*VOL
-                     KFST4_SUM = KFST4_SUM + KFST4_GAS(I,J,K)*VOL
+                     RAD_Q_SUM(IBND) = RAD_Q_SUM(IBND) + (BBF*CHI_R(I,J,K)*Q(I,J,K) + &
+											KAPPA_GAS(I,J,K)*UIID(I,J,K,IBND))*VOL
+                     KFST4_SUM(IBND) = KFST4_SUM(IBND) + KFST4_GAS(I,J,K)*VOL
                ENDIF
             ENDDO
          ENDDO
@@ -917,7 +922,7 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
             DO I=1,IBAR
                IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
                IF (CHI_R(I,J,K)*Q(I,J,K)>QR_CLIP) THEN
-                  KFST4_GAS(I,J,K) = KFST4_GAS(I,J,K)*RTE_SOURCE_CORRECTION_FACTOR
+                  KFST4_GAS(I,J,K) = KFST4_GAS(I,J,K)*RTE_SOURCE_CORRECTION_FACTOR(IBND)
                ENDIF
             ENDDO
          ENDDO
@@ -938,8 +943,8 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
                   KFST4_GAS(I,J,K) = KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4
                   IF (CHI_R(I,J,K)*Q(I,J,K)>QR_CLIP) THEN
                      VOL = R(I)*DX(I)*DY(J)*DZ(K)
-                     RAD_Q_SUM = RAD_Q_SUM + (CHI_R(I,J,K)*Q(I,J,K)+KAPPA_GAS(I,J,K)*UII(I,J,K))*VOL
-                     KFST4_SUM = KFST4_SUM + KFST4_GAS(I,J,K)*VOL
+                     RAD_Q_SUM(IBND) = RAD_Q_SUM(IBND) + (CHI_R(I,J,K)*Q(I,J,K)+KAPPA_GAS(I,J,K)*UII(I,J,K))*VOL
+                     KFST4_SUM(IBND) = KFST4_SUM(IBND) + KFST4_GAS(I,J,K)*VOL
                   ENDIF
                ENDDO
             ENDDO
