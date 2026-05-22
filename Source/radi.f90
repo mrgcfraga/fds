@@ -3753,6 +3753,33 @@ BAND_LOOP: DO IBND = 1,NUMBER_SPECTRAL_BANDS
             ENDDO
          ENDDO
       ENDDO
+   
+   ELSEIF (SLW1_MODEL) THEN WIDE_BAND_MODEL_IF
+      DO K=1,KBAR
+         DO J=1,JBAR
+            DO I=1,IBAR
+               IF (CELL(CELL_INDEX(I,J,K))%SOLID) CYCLE
+               IF (CC_IBM) THEN
+                  ALPHA_CC = 1._EB
+                  IF (CCVAR(I,J,K,CC_CGSC)==CC_SOLID) CYCLE
+                  IC = CCVAR(I,J,K,CC_IDCC)
+                  IF (IC>0) ALPHA_CC = CUT_CELL(IC)%ALPHA_CC
+               ENDIF
+               Z_ARRAY(1:N_TRACKED_SPECIES) = ZZ(I,J,K,1:N_TRACKED_SPECIES)                  ! Mass frac of the tracked species
+               R_MIXTURE = RSUM(I,J,K)                                                       ! Specific gas constant of the mixture
+               X_H2O = GET_VOLUME_FRACTION(H2O_INDEX,Z_ARRAY,R_MIXTURE)
+               X_CO2 = GET_VOLUME_FRACTION(CO2_INDEX,Z_ARRAY,R_MIXTURE)
+               TOTAL_P = PBAR(K,PRESSURE_ZONE(I,J,K)) + RHO(I,J,K)*(H(I,J,K)-KRES(I,J,K))    ! Total pressure
+               BBF = A_WSGG(TMP(I,J,K),MOL_RAT,IBND)                                         ! Temp coefficient for the jth gas
+               CALL GET_MASS_FRACTION(Z_ARRAY,SOOT_INDEX,SOOT_MASS_FRACTION)
+
+               KAPPA_GAS(I,J,K) = KAPPA_WSGG(X_H2O, X_CO2,MOL_RAT,PARTIAL_P,IBND) + &
+                                  KAPPA_SOOT(RHO(I,J,K)*SOOT_MASS_FRACTION,TMP(I,J,K))       ! Absorp coeff for the jth gas
+
+               KFST4_GAS(I,J,K) = BBF*KAPPA_GAS(I,J,K)*FOUR_SIGMA*TMP(I,J,K)**4._EB
+            ENDDO
+         ENDDO
+      ENDDO
 
    ELSE WIDE_BAND_MODEL_IF
 
@@ -4708,6 +4735,55 @@ ENDDO
 GET_KAPPA = KAPPA_SUM
 
 END FUNCTION GET_KAPPA
+
+SUBROUTINE SLW1_COMPUTE_REF(TREF,XSREF,PREF,KAPPA_OUT,A_OUT)
+
+   !-----------------------------------------------------------------
+   !Declaration of variables
+   !-----------------------------------------------------------------
+   USE COMP_FUNCTIONS, ONLY: SHUTDOWN
+   USE PRECISION_PARAMETERS, ONLY: PI,TWOPI,TWO_EPSILON_EB
+   IMPLICIT NONE
+   INTEGER,PARAMETER :: MAX_ITER = 1000                              !Maximum number of allowed 
+   INTEGER :: COUNTER
+   REAL(EB),INTENT(IN) :: PREF,TREF,XSREF(:)
+   REAL(EB),INTENT(OUT) :: A_OUT,KAPPA_OUT
+   REAL(EB),PARAMETER :: ITER_TOL=1.E-6_EB
+   REAL(EB) :: DIFF,EPS,LENGTH,KP,K_OLD,K_NEW
+
+   SELECTCASE(trim(slw1_approach))
+      !--------------------------------------------------------------
+      !Planck-mean absorption coefficient-emissivity method
+      !--------------------------------------------------------------
+      CASE('kp-epsilon')
+         !Compute target values
+         LENGTH = maxval(slw1_length)                                !Surrogate name for medium length
+         KP = get_slw_kp(Tref,pref,xsref,Tref,slw1_ngases)                        !Reference Planck-mean absorption coefficient
+         EPS = get_slw_emissivity(Tref,pref,xsref,Tref,slw1_ngases,& !Reference emissivity
+                                     length)  
+            
+         !Compute kappa iteratively
+         COUNTER = 0; K_OLD = 0.1_EB*KP; DIFF = 2._EB*ITER_TOL       !Initialize values
+         DO WHILE (DIFF.GT.ITER_TOL)
+            COUNTER = COUNTER + 1                                    !Update counter
+            if (COUNTER.GT.MAX_ITER) &                               !If maximum allowed number of iterations has been
+               CALL SHUTDOWN('slw1_compute_ref: Maximum number of &
+                              &iterations exceeded')                 !  exceeded, halt the solution
+            K_NEW = (KP/EPS)*(1._EB - DEXP(-K_OLD*LENGTH))           !Compute new kappa value
+            DIFF = DABS((K_NEW - K_OLD)/(K_OLD + TWO_EPSILON_EB))    !Compute relative difference between new and old
+                                                                        !  estimates for kappa
+            K_OLD = K_NEW                                            !Update old kappa estimate for new loop
+         ENDDO
+          
+         !Finish computing kappa and a
+         KAPPA_OUT = K_NEW
+         A_OUT = KP/K_NEW
+
+      CASE DEFAULT
+         CALL SHUTDOWN('slw1_compute_ref: no valid option for &
+                        &slw1_approach')
+   ENDSELECT
+ENDSUBROUTINE SLW1_COMPUTE_REF
 
 
 !> \brief Function to compute the absorption coefficient according to Bordbar et al. (2014)
