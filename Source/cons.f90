@@ -879,6 +879,7 @@ INTEGER :: NLAMBDAT               !< Number of wavelength subdivisions
 
 LOGICAL :: WIDE_BAND_MODEL        !< Non-gray gas, wide band model
 LOGICAL :: WSGG_MODEL             !< Weighted Sum of Gray Gas model
+LOGICAL :: SLW1_MODEL             !< SLW-1 model
 
 END MODULE RADCONS
 
