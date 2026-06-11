@@ -3451,9 +3451,7 @@ T_USED(9)=T_USED(9)+CURRENT_TIME()-TNOW
 
 CONTAINS
 
-
 !> \brief Finite Volume Method of radiation transport
-
 SUBROUTINE RADIATION_FVM
 
 USE MIEV
@@ -4613,6 +4611,15 @@ ENDIF
 END SUBROUTINE RADIATION_FVM
 
 
+real(dp) function get_slw_single_cj(ccj0,ccj1)
+   
+   implicit none
+   real(dp),intent(in) :: ccj0,ccj1
+   get_slw_single_cj = sqrt(ccj0*ccj1)                               !For now, only this approach
+                                                                        !has been implemented   
+endfunction get_slw_single_cj
+
+
 !> \brief Add user-specified HRRPUV to the heat release rate term, Q
 !> \param MODE Indicator of whether volumetric heat release rate, HRRPUV, is to be added to or subtracted from Q
 !> \details If MODE=0, add the user-specified volumetric HRRPUV to the total, Q (W/m3)
@@ -4736,54 +4743,54 @@ GET_KAPPA = KAPPA_SUM
 
 END FUNCTION GET_KAPPA
 
-SUBROUTINE SLW1_COMPUTE_REF(TREF,XSREF,PREF,KAPPA_OUT,A_OUT)
+! SUBROUTINE SLW1_COMPUTE_REF(TREF,XSREF,PREF,KAPPA_OUT,A_OUT)
 
-   !-----------------------------------------------------------------
-   !Declaration of variables
-   !-----------------------------------------------------------------
-   USE COMP_FUNCTIONS, ONLY: SHUTDOWN
-   USE PRECISION_PARAMETERS, ONLY: PI,TWOPI,TWO_EPSILON_EB
-   IMPLICIT NONE
-   INTEGER,PARAMETER :: MAX_ITER = 1000                              !Maximum number of allowed 
-   INTEGER :: COUNTER
-   REAL(EB),INTENT(IN) :: PREF,TREF,XSREF(:)
-   REAL(EB),INTENT(OUT) :: A_OUT,KAPPA_OUT
-   REAL(EB),PARAMETER :: ITER_TOL=1.E-6_EB
-   REAL(EB) :: DIFF,EPS,LENGTH,KP,K_OLD,K_NEW
+!    !-----------------------------------------------------------------
+!    !Declaration of variables
+!    !-----------------------------------------------------------------
+!    USE COMP_FUNCTIONS, ONLY: SHUTDOWN
+!    USE PRECISION_PARAMETERS, ONLY: PI,TWOPI,TWO_EPSILON_EB
+!    IMPLICIT NONE
+!    INTEGER,PARAMETER :: MAX_ITER = 1000                              !Maximum number of allowed 
+!    INTEGER :: COUNTER
+!    REAL(EB),INTENT(IN) :: PREF,TREF,XSREF(:)
+!    REAL(EB),INTENT(OUT) :: A_OUT,KAPPA_OUT
+!    REAL(EB),PARAMETER :: ITER_TOL=1.E-6_EB
+!    REAL(EB) :: DIFF,EPS,LENGTH,KP,K_OLD,K_NEW
 
-   SELECTCASE(trim(slw1_approach))
-      !--------------------------------------------------------------
-      !Planck-mean absorption coefficient-emissivity method
-      !--------------------------------------------------------------
-      CASE('kp-epsilon')
-         !Compute target values
-         LENGTH = maxval(slw1_length)                                !Surrogate name for medium length
-         KP = get_slw_kp(Tref,pref,xsref,Tref,slw1_ngases)                        !Reference Planck-mean absorption coefficient
-         EPS = get_slw_emissivity(Tref,pref,xsref,Tref,slw1_ngases,& !Reference emissivity
-                                     length)  
+!    SELECTCASE(trim(slw1_approach))
+!       !--------------------------------------------------------------
+!       !Planck-mean absorption coefficient-emissivity method
+!       !--------------------------------------------------------------
+!       CASE('kp-epsilon')
+!          !Compute target values
+!          LENGTH = maxval(slw1_length)                                !Surrogate name for medium length
+!          KP = get_slw_kp(Tref,pref,xsref,Tref,slw1_ngases)                        !Reference Planck-mean absorption coefficient
+!          EPS = get_slw_emissivity(Tref,pref,xsref,Tref,slw1_ngases,& !Reference emissivity
+!                                      length)  
             
-         !Compute kappa iteratively
-         COUNTER = 0; K_OLD = 0.1_EB*KP; DIFF = 2._EB*ITER_TOL       !Initialize values
-         DO WHILE (DIFF.GT.ITER_TOL)
-            COUNTER = COUNTER + 1                                    !Update counter
-            if (COUNTER.GT.MAX_ITER) &                               !If maximum allowed number of iterations has been
-               CALL SHUTDOWN('slw1_compute_ref: Maximum number of &
-                              &iterations exceeded')                 !  exceeded, halt the solution
-            K_NEW = (KP/EPS)*(1._EB - DEXP(-K_OLD*LENGTH))           !Compute new kappa value
-            DIFF = DABS((K_NEW - K_OLD)/(K_OLD + TWO_EPSILON_EB))    !Compute relative difference between new and old
-                                                                        !  estimates for kappa
-            K_OLD = K_NEW                                            !Update old kappa estimate for new loop
-         ENDDO
+!          !Compute kappa iteratively
+!          COUNTER = 0; K_OLD = 0.1_EB*KP; DIFF = 2._EB*ITER_TOL       !Initialize values
+!          DO WHILE (DIFF.GT.ITER_TOL)
+!             COUNTER = COUNTER + 1                                    !Update counter
+!             if (COUNTER.GT.MAX_ITER) &                               !If maximum allowed number of iterations has been
+!                CALL SHUTDOWN('slw1_compute_ref: Maximum number of &
+!                               &iterations exceeded')                 !  exceeded, halt the solution
+!             K_NEW = (KP/EPS)*(1._EB - DEXP(-K_OLD*LENGTH))           !Compute new kappa value
+!             DIFF = DABS((K_NEW - K_OLD)/(K_OLD + TWO_EPSILON_EB))    !Compute relative difference between new and old
+!                                                                         !  estimates for kappa
+!             K_OLD = K_NEW                                            !Update old kappa estimate for new loop
+!          ENDDO
           
-         !Finish computing kappa and a
-         KAPPA_OUT = K_NEW
-         A_OUT = KP/K_NEW
+!          !Finish computing kappa and a
+!          KAPPA_OUT = K_NEW
+!          A_OUT = KP/K_NEW
 
-      CASE DEFAULT
-         CALL SHUTDOWN('slw1_compute_ref: no valid option for &
-                        &slw1_approach')
-   ENDSELECT
-ENDSUBROUTINE SLW1_COMPUTE_REF
+!       CASE DEFAULT
+!          CALL SHUTDOWN('slw1_compute_ref: no valid option for &
+!                         &slw1_approach')
+!    ENDSELECT
+! ENDSUBROUTINE SLW1_COMPUTE_REF
 
 
 !> \brief Function to compute the absorption coefficient according to Bordbar et al. (2014)
