@@ -720,6 +720,123 @@ IMPLICIT NONE (TYPE,EXTERNAL)
 
 CONTAINS
 
+   !====================================================================
+   !Subroutine to define the quadrature points and 
+   !weights according to the Gauss-Legendre quadrature
+   !====================================================================
+   !(Adapted from the gauleg subroutine in Numerical Recipes)
+   !x1 and x2 are the upper and lower limits of the quadrature
+   subroutine quad_gauss_legendre(x1,x2,npts,xquad,wquad)
+   
+      use precision_parameters, only: pi
+      implicit none
+      integer,intent(in) :: npts
+      real(eb),intent(in) :: x1,x2
+      real(eb),intent(out) :: xquad(npts),wquad(npts)
+      real(eb), parameter :: eps=3.0e-14_eb
+      integer :: i,j,m
+      real(eb) :: xl,xm
+      real(eb) :: p1,p2,p3,pp,z,z1
+      
+      m=(npts+1)/2                                                      !The roots are symmetrical, so only 
+                                                                        !half of them needs to be found
+      xm=0.5d0*(x2+x1)
+      xl=0.5d0*(x2-x1)
+      do i=1,m                                                          !Loop over the roots
+         z = cos(pi*(real(i,eb)-0.25_eb)/(real(npts,eb)+0.5_eb))        !Approximation for the ith root
+         do
+            p1 = 1._eb
+            p2 = 0._eb
+            do j=1,npts                                                 !Loop up the recurrence relation
+               p3 = p2                                                  !to get the Legendre polynomial
+               p2 = p1                                                  !evaluated at z
+               p1=(real(2*j-1,eb)*z*p2-real(j-1,eb)*p3)/real(j,eb)      !Desired Legendre polynomial 
+            enddo
+            pp=real(npts,eb)*(z*p1-p2)/(z*z-1._eb)
+            z1 = z
+            z = z1 - p1/pp                                              !Newton's method
+            if (abs(z-z1).lt.eps) exit
+         enddo
+         xquad(i) = xm-xl*z                                             !Scale the root to the desired interval,
+         xquad(npts+1-i) = xm+xl*z                                      !and put in its symmetric counterpart.
+         wquad(i) = 2._eb*xl/((1._eb-z*z)*pp*pp)                        !Compute the weight
+         wquad(npts+1-i) = wquad(i)                                     !and its symmetric counterpar
+      
+      enddo
+
+   endsubroutine quad_gauss_legendre
+
+  !====================================================================
+   !Subroutine to define the quadrature points and weights according to 
+   !the Gauss-Chebyshev quadrature (see Wang & Modest, 2005, JQSRT)
+   !Obs: I have made a modification relative to the JQSRT paper; there,
+   !the weights are made to sum up to 2, which I do not think is 
+   !correct, so I have divided the weights in that formulation by 2
+   !====================================================================
+   subroutine quad_gauss_chebyshev(npoints,which_quad,xquad,wquad)
+   
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: shutdown
+      use precision_parameters, only: pi
+      implicit none
+      character(*),intent(in) :: which_quad
+      integer,intent(in) :: npoints
+      integer :: ii,kk,ll
+      real(eb),intent(out) :: xquad(npoints),wquad(npoints)
+      real(eb) :: thetak,wsum
+            
+      !-----------------------------------------------------------------
+      !Compute the quadrature points and weights
+      !-----------------------------------------------------------------
+      if (trim(which_quad).eq.'natural') then
+         do kk=1,npoints
+            ii = npoints - kk + 1                                       !Flip the resulting arrays
+            thetak = real(kk,eb)*pi/real(npoints + 1,eb)
+            xquad(ii) = dcos(thetak)
+            wsum = 0._eb
+            do ll=1,(npoints+1)/2
+               wsum = wsum + dsin(real(2*ll-1,eb)*thetak)/&
+                  real(2*ll-1,eb)
+            enddo
+            wquad(ii) = 4._eb*dsin(thetak)*wsum/real(npoints+1,eb)
+         enddo
+         
+      elseif (trim(which_quad).eq.'even-rank') then
+         do kk=1,npoints
+            ii = npoints - kk + 1                                       !Flip the resulting arrays
+            thetak = real(kk,eb)*pi/real(2*npoints + 1,eb)
+            xquad(ii) = dcos(thetak)
+            wsum = 0._eb
+            do ll=1,npoints
+               wsum = wsum + dsin(real(2*ll-1,eb)*thetak)/&
+                  real(2*ll-1,eb)
+            enddo
+            wquad(ii) = 8._eb*dsin(thetak)*wsum/real(2*npoints+1,eb)
+         enddo     
+         wquad = wquad/2._eb                                            !My addition
+      
+      elseif (trim(which_quad).eq.'odd-rank') then
+         do kk=1,npoints
+            ii = npoints - kk + 1                                       !Flip the resulting arrays
+            thetak = real(kk,eb)*pi/real(2*npoints,eb)
+            xquad(ii) = dcos(thetak)
+            wsum = 0._eb
+            do ll=1,npoints
+               wsum = wsum + dsin(real(2*ll-1,eb)*thetak)/&
+                  real(2*ll-1,eb)
+            enddo
+            wquad(ii) = 2._eb*real(2-kron_delta(kk,npoints),eb)*&
+                        dsin(thetak)*wsum/npoints
+         enddo      
+         wquad = wquad/2._eb                                            !My addition
+      else
+         call shutdown('quad_gauss_chebyshev: quadrature not specified')
+      endif  
+      
+   endsubroutine quad_gauss_chebyshev
+
 
 !> \brief Add new value to a growing histogram
 !> \param NBINS Number of bins in the histogram
