@@ -487,6 +487,10 @@ REAL(EB) :: QR_CLIP=1._EB     !< Lower bound of \f$ \chi_{\rm r} \dot{q}_{ijk}''
 REAL(EB) :: C_MAX=100._EB     !< Maximum value of RAD_Q_SUM/KFST4_SUM
 REAL(EB) :: C_MIN=0.1_EB      !< Minimum value of RAD_Q_SUM/KFST4_SUM
 
+! SLW parameters
+REAL(EB) :: SLW_FMAX,SLW_FMIN
+CHARACTER(20) :: SLW_QUADRATURE,slw_mixture_method
+
 ! Ramping parameters
 
 CHARACTER(LABEL_LENGTH), POINTER, DIMENSION(:) :: RAMP_ID,RAMP_TYPE
