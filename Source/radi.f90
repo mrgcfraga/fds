@@ -2779,6 +2779,32 @@ INTEGER :: N_RADCAL_ARRAY_SIZE                     !< Number of radcal species p
 INTEGER :: RADCAL_SPECIES_INDEX(16)                !< Mapping of radcal species present to radcal calling function
 CHARACTER(LABEL_LENGTH) :: RADCAL_SPECIES_ID(16)='NULL'!< Name of radcal species
 
+
+!=======================================================================
+!SLW-related variables
+!=======================================================================
+integer :: albdf_nx(5)                                                  !Array containing the number of discrete mole 
+                                                                        !  fractions in the ALBDF data file for each species
+integer :: albdf_ntg,albdf_ntb                                          !Number of discrete gas and source temperatures
+                                                                        !  in the ALBDF data files
+integer :: albdf_nCj                                                    !Number of discrete absorption cross-sections in the
+                                                                        !  ALBDF data files
+integer :: albdf_nbands                                                 !Number of discrete bands in the ALBDF data files
+real(EB) :: albdf_x(20,5)                                               !Array with the mole fraction values for which the
+                                                                        !  ALBDF data is available for each species
+real(EB) :: slw_pref,slw_Tref,slw_xsref(slw_ns)                         !Reference pressure, temperature and mole fraction of
+                                                                        !  the participating species (needed for non-uniform SLW)
+real(dp),allocatable,dimension(:) :: albdf_Tg,albdf_Tb                  !Array with the gas and source temperature values 
+                                                                        !  for which the ALBDF data is available
+real(dp),allocatable,dimension(:) :: albdf_cj,albdf_iarr                !Array with the absorption cross-section values for
+                                                                        !  which the ALBDF data is available
+real(dp),allocatable,dimension(:) :: bslw_lbound,bslw_ubound           !Array with the lower and upper wavelength
+                                                                        !  bounds (in 1/m) of each band in the BLSW model
+real(dp),allocatable,dimension(:,:,:,:,:,:) :: albdf_darr               !Arrays storing all the ALBDF data for all species
+
+logical :: albdf_inverted                                               !If .true., the ALBDF external data file comes as C(F); 
+                                                                        !  if .false., F(C)
+   
 CONTAINS
 
 
@@ -3416,7 +3442,314 @@ DO N=1,N_RADF
    ALLOCATE(RF%IL_SAVE(RF%I1:RF%I2,RF%J1:RF%J2,RF%K1:RF%K2,NUMBER_RADIATION_ANGLES))
 ENDDO
 
+
+!#######################################################################
+!Preprocessing ALBDF
+!#######################################################################
+CALL READ_ALBDF_INFO_1
+CALL ALLOCATE_ALBDF_PARAMETERS
+CALL READ_ALBDF_INFO_2
+CALL READ_ALDBF
+
 END SUBROUTINE INIT_RADIATION
+
+!====================================================================
+!SUBROUTINE TO READ THE SIZES OF THE ALBDF-RELATED ARRAYS FROM AN
+!EXTERNAL INFORMATION FILE
+!====================================================================
+SUBROUTINE READ_ALBDF_INFO_1
+
+   !-----------------------------------------------------------------
+   !DECLARATION OF VARIABLES
+   !-----------------------------------------------------------------
+   USE COMP_FUNCTIONS, ONLY: CHECKFILEEXISTS,GET_FILE_NUMBER,&
+                              SHUTDOWN
+   IMPLICIT NONE
+   INTEGER :: IN_UNIT,ISP,NSP
+   INTEGER :: NTG(NUMBER_OF_RAD_SPECIES),NTB(NUMBER_OF_RAD_SPECIES),&
+      NCJ(NUMBER_OF_RAD_SPECIES),NPB(NUMBER_OF_RAD_SPECIES)
+   LOGICAL :: ALBDF_INVERT_FLAG(NUMBER_OF_RAD_SPECIES)
+   
+   !-----------------------------------------------------------------
+   !READ THE PARAMETERS THAT DEFINE THE ALBDF ARRAY SIZES
+   !AND CHECK IF THEY ARE THE SAME FOR ALL SPECIES
+   !-----------------------------------------------------------------
+   NSP = NUMBER_OF_RAD_SPECIES
+   DO ISP=1,NSP
+      IF (ALBDF_INFO_FILE(ISP).EQ.'NULL') CYCLE      
+      IN_UNIT = GET_FILE_NUMBER()
+      CALL CHECKFILEEXISTS(ALBDF_INFO_FILE(ISP),'READ_ALBDF_INFO_1')
+      OPEN(UNIT=IN_UNIT,FILE=ALBDF_INFO_FILE(ISP),&
+            FORM='UNFORMATTED',ACTION='READ')
+      READ(IN_UNIT) ALBDF_INVERT_FLAG(ISP)
+      READ(IN_UNIT) ALBDF_NX(ISP),NTG(ISP),NTB(ISP),NCJ(ISP),&
+                     NPB(ISP)
+   
+      IF (ISP.GT.1) THEN
+         IF (NTG(ISP).NE.(NTG(ISP-1))) &
+            CALL SHUTDOWN('READ_ALBDF_INFO_1: &
+                           &ALBDFS WITH DIFFERENT TG SIZES')
+         IF (NTB(ISP).NE.(NTB(ISP-1))) &
+            CALL SHUTDOWN('READ_ALBDF_INFO_1: &
+                           &ALBDFS WITH DIFFERENT TB SIZES')
+         IF (NCJ(ISP).NE.(NCJ(ISP-1))) &
+            CALL SHUTDOWN('READ_ALBDF_INFO_1: &
+                           &ALBDFS WITH DIFFERENT CJ SIZES')
+         IF (NPB(ISP).NE.(NPB(ISP-1))) &
+            CALL SHUTDOWN('READ_ALBDF_INFO_1: &
+                           &ALBDFS WITH DIFFERENT PB SIZES')
+         IF (XOR(ALBDF_INVERT_FLAG(ISP),ALBDF_INVERT_FLAG(ISP-1))) &
+            CALL SHUTDOWN('READ_ALBDF_INFO_1: &
+                           &ALBDFS INVERT FLAG MISMATCH')
+      ENDIF
+      
+      CLOSE(IN_UNIT)
+   ENDDO
+   
+   !-----------------------------------------------------------------
+   !IF NO ERROR OCCURRED, ASSIGN THE SIZES OF THE ALBDF ARRAY
+   !-----------------------------------------------------------------
+   ALBDF_NTG = NTG(1)
+   ALBDF_NTB = NTB(1)
+   ALBDF_NCJ = NCJ(1)
+   ALBDF_NBANDS = NPB(1)
+   ALBDF_INVERTED = ALBDF_INVERT_FLAG(1)
+   
+ENDSUBROUTINE READ_ALBDF_INFO_1
+
+!====================================================================
+!SUBROUTINE TO ALLOCATE ALL ARRAYS RELATED TO THE ALBDF
+!====================================================================
+SUBROUTINE ALLOCATE_ALBDF_PARAMETERS
+
+   !-----------------------------------------------------------------
+   !DECLARATION OF VARIABLES
+   !-----------------------------------------------------------------
+   USE COMP_FUNCTIONS, ONLY: CHECKMEMALLOC
+   IMPLICIT NONE
+   INTEGER :: NS,NTG,NTB,NCJ,NPB
+   INTEGER :: IERR
+   
+   !-----------------------------------------------------------------
+   !SURROGATE NAMES
+   !-----------------------------------------------------------------
+   CALL DPRINT('ALLOCATE_ALBDF_PARAMETERS: SURROGATE NAMES')
+   NS  = NUMBER_OF_RAD_SPECIES
+   NTG = ALBDF_NTG
+   NTB = ALBDF_NTB
+   NCJ = ALBDF_NCJ
+   NPB = ALBDF_NBANDS
+
+   !-----------------------------------------------------------------
+   !DEALLOCATE ARRAYS IF THEY ARE ALREADY ALLOCATED
+   !-----------------------------------------------------------------
+   IF (ALLOCATED(ALBDF_DARR))    DEALLOCATE(ALBDF_DARR)
+   IF (ALLOCATED(ALBDF_IARR))    DEALLOCATE(ALBDF_IARR)
+   IF (ALLOCATED(ALBDF_TB))      DEALLOCATE(ALBDF_TB)
+   IF (ALLOCATED(ALBDF_TG))      DEALLOCATE(ALBDF_TG)
+   IF (ALLOCATED(BSLW_LBOUND))   DEALLOCATE(BSLW_LBOUND)
+   IF (ALLOCATED(BSLW_UBOUND))   DEALLOCATE(BSLW_UBOUND)      
+   
+   !-----------------------------------------------------------------
+   !ALLOCATE ARRAYS
+   !-----------------------------------------------------------------
+   CALL DPRINT('ALLOCATE_ALBDF_PARAMETERS: ALLOCATE ARRAYS')
+   ALLOCATE(ALBDF_TB(NTB),STAT=IERR)
+   CALL CHECKMEMALLOC('ALBDF_TB',IERR)
+   ALLOCATE(ALBDF_TG(NTG),STAT=IERR)
+   CALL CHECKMEMALLOC('ALBDF_TG',IERR)
+   ALLOCATE(ALBDF_IARR(NCJ),STAT=IERR)
+   CALL CHECKMEMALLOC('ALBDF_IARR',IERR)
+   ALLOCATE(BSLW_LBOUND(NPB),STAT=IERR)
+   CALL CHECKMEMALLOC('BSLW_LBOUND',IERR)
+   ALLOCATE(BSLW_UBOUND(NPB),STAT=IERR)
+   CALL CHECKMEMALLOC('BSLW_UBOUND',IERR)
+   IF (TRIM(SLW_MIXTURE_METHOD).NE.'ALBDF_PRECOMBINED') THEN
+      ALLOCATE(ALBDF_DARR(NCJ,NTG,SLW_NX,NS,NTB,NPB),STAT=IERR)
+      CALL CHECKMEMALLOC('ALBDF_DARR',IERR)
+   ELSE
+
+   ENDIF
+   
+ENDSUBROUTINE ALLOCATE_ALBDF_PARAMETERS
+
+!====================================================================
+!SUBROUTINE TO READ THE ARRAYS NEEDED FOR ALBDF INTERPOLATIONS
+!FROM AN EXTERNAL INFORMATION FILE
+!====================================================================
+SUBROUTINE READ_ALBDF_INFO_2
+
+   !-----------------------------------------------------------------
+   !DECLARATION OF VARIABLES
+   !-----------------------------------------------------------------
+   USE COMP_FUNCTIONS, ONLY: CHECKFILEEXISTS,CHECKMEMALLOC,&
+                              GET_FILE_NUMBER,SHUTDOWN
+   IMPLICIT NONE
+   INTEGER :: IN_UNIT,IERR,II,ISP
+   INTEGER :: NTG,NTB,NCJ,NPB,NSP
+   REAL(DP),ALLOCATABLE,DIMENSION(:) :: TG_AUX,TB_AUX,IARR_AUX,&
+                                          LPB_AUX,UPB_AUX
+   
+   !-----------------------------------------------------------------
+   !SURROGATE NAMES
+   !-----------------------------------------------------------------
+   CALL DPRINT('READ_ALBDF_INFO_2: SURROGATE NAMES')
+   NSP = NUMBER_OF_RAD_SPECIES
+   NTG = ALBDF_NTG
+   NTB = ALBDF_NTB
+   NCJ = ALBDF_NCJ
+   NPB = ALBDF_NBANDS
+
+   !-----------------------------------------------------------------
+   !ALLOCATE AUXILIARY ARRAYS
+   !-----------------------------------------------------------------
+   ALLOCATE(IARR_AUX(NCJ),STAT=IERR)
+   CALL CHECKMEMALLOC('CJ_AUX',IERR)
+   ALLOCATE(LPB_AUX(NPB),STAT=IERR)
+   CALL CHECKMEMALLOC('LPB_AUX',IERR)
+   ALLOCATE(UPB_AUX(NPB),STAT=IERR)
+   CALL CHECKMEMALLOC('UPB_AUX',IERR)
+   ALLOCATE(TB_AUX(NTB),STAT=IERR)
+   CALL CHECKMEMALLOC('TB_AUX',IERR)
+   ALLOCATE(TG_AUX(NTG),STAT=IERR)
+   CALL CHECKMEMALLOC('TG_AUX',IERR)
+         
+   !-----------------------------------------------------------------
+   !READ THE ARRAYS NEEDED FOR ALBDF INTERPOLATIONS
+   !AND CHECK IF THEY ARE THE SAME FOR ALL SPECIES
+   !-----------------------------------------------------------------
+   DO ISP=1,NSP
+      IF (ALBDF_INFO_FILE(ISP).EQ.'NULL') CYCLE
+      IN_UNIT = GET_FILE_UNIT()
+      CALL CHECKFILEEXISTS(ALBDF_INFO_FILE(ISP),'READ_ALBDF_INFO_2')
+      OPEN(UNIT=IN_UNIT,FILE=ALBDF_INFO_FILE(ISP),&
+            FORM='UNFORMATTED',ACTION='READ')
+      READ(IN_UNIT)
+      READ(IN_UNIT) 
+      READ(IN_UNIT) ALBDF_X(1:ALBDF_NX(ISP),ISP)
+
+      IF (ISP.EQ.1) THEN
+         READ(IN_UNIT) ALBDF_IARR
+         READ(IN_UNIT) ALBDF_TB
+         READ(IN_UNIT) ALBDF_TG
+         READ(IN_UNIT) BSLW_LBOUND
+         READ(IN_UNIT) BSLW_UBOUND
+      ELSE
+         READ(IN_UNIT) IARR_AUX
+         READ(IN_UNIT) TB_AUX
+         READ(IN_UNIT) TG_AUX
+         READ(IN_UNIT) LPB_AUX
+         READ(IN_UNIT) UPB_AUX
+   
+         !CHECK IF CJ ARRAY IS EQUAL FOR ALL SPECIES
+         DO II=1,NCJ
+            IF (ALBDF_IARR(II).NE.IARR_AUX(II)) &
+               CALL SHUTDOWN('READ_ALBDF_INFO_2: &
+                     &ALBDF_IARR MISMATCH BETWEEN DIFFERENT ALBDFS')
+         ENDDO
+         
+         !CHECK IF TB ARRAY IS EQUAL FOR ALL SPECIES
+         DO II=1,NTB
+            IF (ALBDF_TB(II).NE.TB_AUX(II)) &
+               CALL SHUTDOWN('READ_ALBDF_INFO_2: &
+                     &ALBDF_TB MISMATCH BETWEEN DIFFERENT ALBDFS')
+         ENDDO
+   
+         !CHECK IF TG ARRAY IS EQUAL FOR ALL SPECIES
+         DO II=1,NTG
+            IF (ALBDF_TG(II).NE.TG_AUX(II)) &
+               CALL SHUTDOWN('READ_ALBDF_INFO_2: &
+                     &ALBDF_TG MISMATCH BETWEEN DIFFERENT ALBDFS')
+         ENDDO
+         
+         !CHECK IF BSLW_LBOUND ARRAY IS EQUAL FOR ALL SPECIES
+         IF (NPB.GT.1) THEN
+            DO II=1,NPB
+               IF (BSLW_LBOUND(II).NE.LPB_AUX(II)) &
+               CALL SHUTDOWN('READ_ALBDF_INFO_2: &
+                     &BSLW_LBOUND MISMATCH BETWEEN DIFFERENT ALBDFS')
+               IF (BSLW_UBOUND(II).NE.UPB_AUX(II)) &
+               CALL SHUTDOWN('READ_ALBDF_INFO_2: &
+                     &BSLW_UBOUND MISMATCH BETWEEN DIFFERENT ALBDFS')
+            ENDDO
+         ENDIF
+      ENDIF
+      CLOSE(IN_UNIT)
+   ENDDO
+
+ENDSUBROUTINE READ_ALBDF_INFO_2
+
+!====================================================================
+!SUBROUTINE TO READ THE ALBDF FROM AN EXTERNAL FILE
+!====================================================================
+SUBROUTINE READ_ALDBF
+
+   !-----------------------------------------------------------------
+   !DECLARATION OF VARIABLES
+   !-----------------------------------------------------------------
+   USE COMP_FUNCTIONS, ONLY: CHECKFILEEXISTS,GET_FILE_NUMBER,&
+                              SHUTDOWN
+   IMPLICIT NONE
+   INTEGER :: IN_UNIT,ISP,IPB,IXP,ITG,ITB,ICJ,IERR
+   INTEGER :: NSP,NTG,NTB,NCJ,NPB,NXP
+   
+   !-----------------------------------------------------------------
+   !SURROGATE NAMES
+   !-----------------------------------------------------------------
+   CALL DPRINT('READ_ALDBF: SURROGATE NAMES')
+   NSP = NUMBER_OF_RAD_SPECIES
+   NTG = ALBDF_NTG
+   NTB = ALBDF_NTB
+   NCJ = ALBDF_NCJ
+   NPB = ALBDF_NBANDS
+   
+   !-----------------------------------------------------------------
+   !READ THE DATA
+   !-----------------------------------------------------------------
+   CALL DPRINT('READ_ALDBF: READ THE DATA')
+   DO ISP=1,NSP
+      !SURROGATE NAME FOR THE NUMBER OF SPECIES MOLE FRACTIONS
+      !IN THE ALBDF OF SPECIES ISP
+      NXP = ALBDF_NX(ISP)
+   
+      !SKIP SPECIES FOR WHICH NO ALBDF IS AVAILABLE
+      IF (NXP.LE.0) CYCLE; IF (ALBDF_FILE(ISP).EQ.'NULL') CYCLE
+      
+      !PREPARE INPUT
+      CALL CHECKFILEEXISTS(ALBDF_FILE(ISP),'READ_ALDBF')             !CHECK IF DATA FILE EXISTS
+      IN_UNIT = GET_FILE_UNIT()                                      !GET UNIT
+      
+      IF (ALBDF_UNFORMATTED) THEN
+         OPEN(UNIT=IN_UNIT,FILE=TRIM(ALBDF_FILE(ISP)),&              !OPEN THE UNIT TO BE READ
+            FORM='UNFORMATTED',ACTION='READ')
+         READ(IN_UNIT) ALBDF_DARR(1:NCJ,1:NTG,1:NXP,ISP,1:NTB,1:NPB) !READ THE ALBDF ALL AT ONCE
+         
+      ELSE
+         OPEN(UNIT=IN_UNIT,FILE=TRIM(ALBDF_FILE(ISP)),&              !OPEN THE UNIT TO BE READ
+            FORM='FORMATTED',ACTION='READ')
+         DO IPB=1,NPB
+            DO IXP=1,NXP
+               DO ITG=1,NTG
+                  DO ITB=1,NTB
+                     DO ICJ=1,NCJ
+                        READ(IN_UNIT,*,IOSTAT=IERR) &                !READ DE ALBDF LINE BY LINE
+                           ALBDF_DARR(ICJ,ITG,IXP,ISP,ITB,IPB)
+                        IF (IERR.LT.0) &                             !STOP IF THE FILE ENDS SUDDENLY
+                           CALL SHUTDOWN('READ_ALDBF: &              
+                                          &FILE MISSING DATA')
+                     ENDDO
+                  ENDDO
+               ENDDO
+            ENDDO   
+         ENDDO
+      ENDIF
+      
+      !CLOSE THE UNIT
+      CLOSE(IN_UNIT)
+      
+   ENDDO
+
+ENDSUBROUTINE READ_ALDBF
 
 
 !> \brief Compute radiative source term and transfer.

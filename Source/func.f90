@@ -17,6 +17,25 @@ IMPLICIT NONE (TYPE,EXTERNAL)
 
 CONTAINS
 
+!====================================================================
+!SUBROUTINE FOR CHECKING IF AN EXTERNAL FILE EXISTS
+!====================================================================
+SUBROUTINE CHECKFILEEXISTS(FILE_NAME)
+
+   IMPLICIT NONE
+   CHARACTER(*),INTENT(IN) :: FILE_NAME
+   CHARACTER(180) :: MSG
+   LOGICAL :: FILE_EXISTS
+   
+   INQUIRE(FILE=TRIM(FILE_NAME),EXIST=FILE_EXISTS)
+   
+   IF (.NOT.FILE_EXISTS) THEN
+      MSG = 'FILE '//TRIM(FILE_NAME)//' DOES NOT EXIST'
+      CALL SHUTDOWN(MSG) 
+   ENDIF
+
+ENDSUBROUTINE CHECKFILEEXISTS
+
 
 !> \brief Returns the wall clock time in seconds.
 
