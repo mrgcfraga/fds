@@ -2794,13 +2794,13 @@ real(EB) :: albdf_x(20,5)                                               !Array w
                                                                         !  ALBDF data is available for each species
 real(EB) :: slw_pref,slw_Tref,slw_xsref(slw_ns)                         !Reference pressure, temperature and mole fraction of
                                                                         !  the participating species (needed for non-uniform SLW)
-real(dp),allocatable,dimension(:) :: albdf_Tg,albdf_Tb                  !Array with the gas and source temperature values 
+real(eb),allocatable,dimension(:) :: albdf_Tg,albdf_Tb                  !Array with the gas and source temperature values 
                                                                         !  for which the ALBDF data is available
-real(dp),allocatable,dimension(:) :: albdf_cj,albdf_iarr                !Array with the absorption cross-section values for
+real(eb),allocatable,dimension(:) :: albdf_cj,albdf_iarr                !Array with the absorption cross-section values for
                                                                         !  which the ALBDF data is available
-real(dp),allocatable,dimension(:) :: bslw_lbound,bslw_ubound           !Array with the lower and upper wavelength
+real(eb),allocatable,dimension(:) :: bslw_lbound,bslw_ubound           !Array with the lower and upper wavelength
                                                                         !  bounds (in 1/m) of each band in the BLSW model
-real(dp),allocatable,dimension(:,:,:,:,:,:) :: albdf_darr               !Arrays storing all the ALBDF data for all species
+real(eb),allocatable,dimension(:,:,:,:,:,:) :: albdf_darr               !Arrays storing all the ALBDF data for all species
 
 logical :: albdf_inverted                                               !If .true., the ALBDF external data file comes as C(F); 
                                                                         !  if .false., F(C)
@@ -3587,7 +3587,7 @@ SUBROUTINE READ_ALBDF_INFO_2
    IMPLICIT NONE
    INTEGER :: IN_UNIT,IERR,II,ISP
    INTEGER :: NTG,NTB,NCJ,NPB,NSP
-   REAL(DP),ALLOCATABLE,DIMENSION(:) :: TG_AUX,TB_AUX,IARR_AUX,&
+   REAL(eb),ALLOCATABLE,DIMENSION(:) :: TG_AUX,TB_AUX,IARR_AUX,&
                                           LPB_AUX,UPB_AUX
    
    !-----------------------------------------------------------------
@@ -5268,7 +5268,7 @@ SUBROUTINE GET_SLW_FJ(NGG,FFJ,FFJ_SUP)
    !absorption coefficient in the SLW model
    !OKAY
    !====================================================================
-   real(dp) function slw_kappa_func(ttmp,press,mole_frac,ccj,&
+   real(eb) function slw_kappa_func(ttmp,press,mole_frac,ccj,&
                                     compute_cj,mixing_method)
    
       !-----------------------------------------------------------------
@@ -5336,7 +5336,7 @@ SUBROUTINE GET_SLW_FJ(NGG,FFJ,FFJ_SUP)
    !Function to compute the gray gas 
    !weighting coefficient in the SLW model
    !====================================================================
-   real(dp) function slw_a_func(ttmp,xxs,ttsource,ccj_sup1,ccj_sup0,&
+   real(eb) function slw_a_func(ttmp,xxs,ttsource,ccj_sup1,ccj_sup0,&
                                 bslw_band_index)
       
       !-----------------------------------------------------------------
@@ -5345,9 +5345,9 @@ SUBROUTINE GET_SLW_FJ(NGG,FFJ,FFJ_SUP)
       implicit none
       integer,optional :: bslw_band_index
       integer :: ipb
-      real(dp),intent(in) :: ttmp,ttsource,xxs(:),ccj_sup1
-      real(dp),optional :: ccj_sup0
-      real(dp) :: F1,F0
+      real(eb),intent(in) :: ttmp,ttsource,xxs(:),ccj_sup1
+      real(eb),optional :: ccj_sup0
+      real(eb) :: F1,F0
       logical :: slw_twindow
       
       !-----------------------------------------------------------------
@@ -5362,7 +5362,7 @@ SUBROUTINE GET_SLW_FJ(NGG,FFJ,FFJ_SUP)
       !-----------------------------------------------------------------
 !      F1 = albdf_mix(ttmp,xxs,ttsource,ccj_sup1,ipb)
       if (slw_twindow) then
-         F0 = 0._dp
+         F0 = 0._eb
       else
 !         F0 = albdf_mix(ttmp,xxs,ttsource,ccj_sup0,ipb)
       endif
@@ -5374,8 +5374,908 @@ SUBROUTINE GET_SLW_FJ(NGG,FFJ,FFJ_SUP)
             
    endfunction slw_a_func
 
+   !====================================================================
+   !Function to interpolate the ALBDF database
+   !====================================================================
+   real(eb) function albdf_ss(Tloc,xloc,Tsrc,CFin,id_spec,&
+                              bslw_band_index,invert)
+   
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: CheckMemAlloc,shutdown
+      use math_functions, only: locate
+      implicit none
+      integer,intent(in) :: id_spec
+      integer,optional :: bslw_band_index
+      integer :: ipb
+      integer :: iTg,iTb,iCF,ixs
+      integer :: nTg,nTb,nCF,nxs
+      integer :: lTg,lTb,lCF,lxs
+      integer :: uTg,uTb,uCF,uxs
+      logical,intent(in),optional :: invert
+      logical :: compute_F,compute_C,get_darr,get_iarr
+      real(eb),intent(in) :: Tloc,Tsrc,xloc,CFin
+      real(eb) :: Qtg,Qtb,Qcf,Qxs,Rtg,Rtb,Rcf,Rxs,xl,xu,xval
+      
+      !-----------------------------------------------------------------
+      !Preparatory procedures
+      !-----------------------------------------------------------------      
+      !Surrogate names
+      nCF = albdf_nCj
+      nTb = albdf_nTb
+      nTg = albdf_nTg
+      nxs = albdf_nx(id_spec)
+      
+      !Set default bslw_band_index value
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
 
+      !Set interpolation flags
+      compute_C = .false.; if (present(invert)) compute_C = invert
+      compute_F = .not.compute_C
+      get_iarr = .false.; get_darr = .false.
+      if (compute_C.and.(.not.albdf_inverted)) get_darr = .true.
+      if (compute_F.and.(.not.albdf_inverted)) get_iarr = .true.
+      if (compute_C.and.albdf_inverted)        get_iarr = .true.
+      if (compute_F.and.albdf_inverted)        get_darr = .true.
+      
+      !Set x value for the interpolation
+      xval = CFin
 
+      !-----------------------------------------------------------------
+      !Find upper and lower indexes
+      !-----------------------------------------------------------------
+      !Gas temperature
+      lTg = locate(albdf_Tg,Tloc,nTg)
+      lTg = max(1,min(lTg,nTg-1)); uTg = min(lTg+1,nTg)
+      if (Tloc.lt.albdf_Tg(1))   uTg = lTg
+      if (Tloc.gt.albdf_Tg(nTg)) lTg = uTg
+
+      !Source temperature
+      lTb = locate(albdf_Tb,Tsrc,nTb)
+      lTb = max(1,min(nTb-1,lTb)); uTb = min(lTb+1,nTb)
+      if (Tsrc.lt.albdf_Tb(1))   uTb = lTb
+      if (Tsrc.gt.albdf_Tb(nTb)) lTb = uTb
+
+      !For mole fraction
+      lxs = locate(albdf_x(:,id_spec),xloc,nxs)                         !Locate lower index
+      lxs = max(1,min(nxs-1,lxs)); uxs = min(lxs+1,nxs)                 !Correct lower index, compute upper index
+      if (xloc.lt.albdf_x(1,id_spec))    uxs = lxs                      !This is to prevent extrapolations
+      if (xloc.gt.albdf_x(nxs,id_spec))  lxs = uxs                      !  (instead, simply take the value at the extreme)
+
+      !Absorption cross-section
+      if (get_iarr) then
+         lCF = locate(albdf_iarr,xval,nCF)
+         lCF = max(1,min(nCF-1,lCF)); uCF = min(lCF+1,nCF)
+         if (xval.lt.albdf_iarr(1))   uCF = lCF
+         if (xval.gt.albdf_iarr(nCF)) lCF = uCF
+         xl = albdf_iarr(lCF); xu = albdf_iarr(uCF)
+      endif
+      
+      !-----------------------------------------------------------------
+      !Interpolation
+      !-----------------------------------------------------------------
+      !Initial values for the interpolation on mole fraction
+      Qxs = 0._eb
+      Rxs = (xloc - albdf_x(lxs,id_spec))/&
+         (albdf_x(uxs,id_spec) - albdf_x(lxs,id_spec) + small)
+      if (lxs.eq.uxs) Rxs = 0._eb                                       !If only one mole fraction value is provided,
+                                                                        !  do not interpolate in mole fraction
+      xloc_loop: do ixs=lxs,uxs
+         !Initial values for the interpolation on local temperature
+         Qtg = 0._eb
+         Rtg = (Tloc - albdf_Tg(ltg))/&
+            (albdf_Tg(utg) - albdf_Tg(ltg) + small)
+         if (ltg.eq.utg) Rtg = 0._eb                                    !If only one temperature value is provided, 
+                     
+         Tloc_loop: do itg=ltg,utg
+            !Initial values for the interpolation on source temperature
+            Qtb = 0._eb
+            Rtb = (Tsrc - albdf_Tb(ltb))/&
+               (albdf_Tb(utb) - albdf_Tb(ltb) + small)
+            if (ltb.eq.utb) Rtb = 0._eb
+      
+            Tsrc_loop: do itb=ltb,utb
+               if (get_darr) then
+                  lCF = &
+                     locate(albdf_darr(:,iTg,ixs,id_spec,iTb,ipb),xval,nCF)
+                  lCF = max(1,min(nCF-1,lCF)); uCF = min(lCF+1,nCF)
+                  if (xval.lt.albdf_darr(1,iTg,ixs,id_spec,iTb,ipb)) &
+                     uCF = lCF 
+                  if (xval.gt.albdf_darr(nCF,iTg,ixs,id_spec,iTb,ipb)) &
+                     lCF = uCF
+                  xl = albdf_darr(lCF,iTg,ixs,id_spec,iTb,ipb)
+                  xu = albdf_darr(uCF,iTg,ixs,id_spec,iTb,ipb)
+               endif
+               
+               !Initial values for the interpolation on C/F
+               Qcf = 0._eb; Rcf = (xval - xl)/(xu - xl + small)
+               if (lCF.eq.uCF) Rcf = 0._eb
+               
+               CF_loop: do iCF=lCF,uCF
+                  !Interpolate on C or F
+                  Rcf = 1._eb - Rcf
+                  if (get_iarr) &
+                     Qcf = Qcf + Rcf*albdf_darr(iCF,iTg,ixs,id_spec,iTb,ipb)
+                  if (get_darr) &
+                     Qcf = Qcf + Rcf*albdf_iarr(iCF)
+               enddo CF_loop
+      
+               !Interpolate on source temperature
+               Rtb = 1._eb - Rtb
+               Qtb = Qtb + Rtb*Qcf
+            enddo Tsrc_loop
+            
+            !Interpolate on local temperature
+            Rtg = 1._eb - Rtg
+            Qtg = Qtg + Rtg*Qtb
+         enddo Tloc_loop
+
+         !Interpolate on mole fraction
+         Rxs = 1._eb - Rxs
+         Qxs = Qxs + Rxs*Qtg
+      enddo xloc_loop
+
+      if (compute_F) Qxs = max(min(1._eb,Qxs),0._eb)
+      albdf_ss = Qxs
+
+   endfunction albdf_ss 
+
+     real(eb) recursive function albdf_mix(Tloc,xloc,Tsrc,CFin,&
+      bslw_band_index,invert,imesh,jmesh,kmesh) result (CF)
+
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: shutdown
+      use math_functions, only: locate
+      implicit none
+      integer,optional :: bslw_band_index
+      integer :: id_spc,it_counter,max_iter,nsp,spc_counter
+      integer :: ipb,isp,single_spec_id
+      integer :: lcf,ncf,ucf,xind,yind
+      integer :: iimesh,jjmesh,kkmesh
+      integer,intent(in),optional :: imesh,jmesh,kmesh
+      logical,intent(in),optional :: invert
+      logical :: albdf_in_mesh,compute_C,compute_F
+      real(eb),intent(in) :: CFin,Tloc,Tsrc,xloc(:)
+      real(eb) :: denum,Fj,Rcf
+      real(eb) :: spc_cutoff,xmax
+      real(eb) :: Cleft,Cright,Ctol,Ctry,xval
+      real(eb) :: Fdiff,Fleft,Fright,Ftarget,Ftol,Ftry
+      CF = 0._eb                                                        !This is here to avoid compilation warnings
+
+      !-----------------------------------------------------------------
+      !Preparatory procedures
+      !-----------------------------------------------------------------
+
+      !Set default bslw_band_index value
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
+
+      !Set interpolation flags
+      compute_C = .false.; if (present(invert)) compute_C = invert
+      compute_F = .not.compute_C
+
+      !Set flag for local ALBDF
+      iimesh = -1; if (present(imesh)) iimesh = imesh
+      jjmesh = -1; if (present(jmesh)) jjmesh = jmesh
+      kkmesh = -1; if (present(kmesh)) kkmesh = kmesh
+
+      !Set x value for the interpolation
+      xval = CFin
+
+      !Surrogate names
+      nsp = number_of_rad_species
+
+      !-----------------------------------------------------------------
+      !Special case for premixed ALBDFs stored for each grid cell
+      !-----------------------------------------------------------------
+      if (albdf_in_mesh) then
+         !Set up the adequate x and y indexes for the interpolation
+         if (compute_F) xind = 1
+         if (compute_C) xind = 2
+         yind = 3 - xind
+         
+         !Interpolate
+         ncf = size(ijk_albdf(:,xind,imesh,jmesh,kmesh))                !Number of C/F discrete values
+         lcf = locate(ijk_albdf(:,xind,imesh,jmesh,kmesh),CFin,ncf)     !Locate lower index
+         lcf = max(1,min(ncf-1,lcf)); ucf = min(lcf+1,ncf)              !Correct lower index, compute upper index
+         Rcf = (CFin - ijk_albdf(lcf,xind,imesh,jmesh,kmesh))/&
+                  (ijk_albdf(ucf,xind,imesh,jmesh,kmesh) - &
+                     ijk_albdf(lcf,xind,imesh,jmesh,kmesh) + small)
+         CF = (1._eb - Rcf)*ijk_albdf(lcf,yind,imesh,jmesh,kmesh) + &
+               Rcf*ijk_albdf(ucf,yind,imesh,jmesh,kmesh)
+      
+         return
+      endif
+
+      !-----------------------------------------------------------------
+      !Special case for a medium with no or only 
+      !one participating species
+      !-----------------------------------------------------------------
+
+      !Determine how many participating species with 
+      !non-negligible concentrations exist
+      spc_cutoff = small                                                !Cutoff: any mole fraction below this value 
+      single_spec_id = -1; spc_counter = 0                              !  is considered negligible
+      do isp=1,nsp
+         if (is_slw_species(isp).and.(xloc(isp).gt.spc_cutoff)) then
+            single_spec_id = isp; spc_counter = spc_counter + 1
+         endif
+      enddo
+
+      !No participating species
+      if (spc_counter.eq.0) then
+         if (compute_C) CF = 0._eb
+         if (compute_F) CF = 1._eb
+         return
+      endif
+
+      !Only one participating species
+      !if (spc_counter.eq.1) then
+      !   CF = albdf_ss(Tloc,xloc(single_spec_id),Tsrc,xval,&
+      !      single_spec_id,ipb,compute_C)
+      !   return
+      !endif
+
+      !-----------------------------------------------------------------
+      !Compute F from C
+      !-----------------------------------------------------------------
+      if (compute_F) then
+         select case(trim(slw_mixture_method))  
+            case('one_species')   
+            !Find the dominating species
+            xmax = 0._eb
+            do isp=1,nsp
+               if ((is_slw_species(isp)).and.(xloc(isp).gt.xmax)) then
+                  xmax = xloc(isp); id_spc = isp
+               endif
+            enddo
+            Fj = albdf_ss(Tloc,xmax,Tsrc,xval,id_spc,ipb)               !Interpolate the ABLDF for this species
+          
+            case('multiplication')
+            !Only consider species with non-negligible mole fractions
+            Fj = 1._eb
+            do isp=1,nsp
+               if (is_slw_species(isp).and.(xloc(isp).gt.spc_cutoff)) &
+                  then
+                  denum = xloc(isp)
+                  Fj = Fj*albdf_ss(Tloc,xloc(isp),Tsrc,xval/denum,&     !  construction to produce data from suitable
+                                   isp,ipb)                             !  values of Cmin and Cmax
+               endif
+            enddo
+        
+            case('superposition')
+            !Only consider species with non-negligible mole fractions
+            spc_counter = 0; Fj = 0._eb
+            do isp=1,nsp
+               if (is_slw_species(isp).and.(xloc(isp).gt.spc_cutoff)) &
+                  then
+                  denum = xloc(isp) 
+                  !if (isp.eq.id_soot) denum = 1._eb
+                  Fj = Fj + &
+                     albdf_ss(Tloc,xloc(isp),Tsrc,xval/denum,isp,ipb)
+                  spc_counter = spc_counter + 1
+               endif
+            enddo
+            Fj = real(1-spc_counter,dp) + Fj
+      
+            case('multiple_integration')
+            Fj = 1._eb                                                  !Set default value, in case there
+            do isp=1,nsp                                                !  are no participating species
+               denum = 1._eb
+               if (xloc(isp).gt.small) &
+                  Fj = albdf_ss(Tloc,xloc(isp),Tsrc,xval/denum,isp,ipb)
+            enddo
+
+            case default
+               call shutdown('albdf_mix: incorrect slw_mixture_method')
+      
+         endselect
+         CF = Fj
+         return
+      endif
+
+      !-----------------------------------------------------------------
+      !Compute C from F (bisection method)
+      !-----------------------------------------------------------------
+      if (compute_C) then
+
+         !Set initial parameters for the iterative process
+         Ftarget = xval                                                 !Target value
+         Ftol = 1.e-7_eb; Ctol = 1.e-5_eb                               !Tolerances for the iterative process
+         it_counter = 0                                                 !Counter for the number of iterations
+         max_iter = 100                                                 !Maximum number of iterations
+         Cleft = 1.e-18_eb;   Fleft = 0._eb                             !C and F to the left 
+         Cright = 10000._eb;  Fright = 1._eb                            !  and to the right
+      
+         !Check for extreme values of Ftarget
+         if (dabs(Ftarget-Fleft).le.small) then
+            CF = Cleft
+            return
+         elseif (dabs(Ftarget-Fright).le.small) then
+            CF = Cright
+            return
+         endif
+
+         !Inversion loop
+         inversion_loop: do
+            it_counter = it_counter + 1                                 !Update counter
+            Ctry = dexp(0.5_eb*(log(Cleft)+log(Cright)))                !Define Ctry from Cleft and Cright
+            Ftry = albdf_mix(Tloc,xloc,Tsrc,Ctry,ipb,imesh=imesh,&      !Compute Ftry from Ctry
+                             jmesh=jmesh,kmesh=kmesh)                   
+            Fdiff = (Ftarget - Ftry)/(Ftarget + small)                  !Error
+            if ((dabs(Fdiff).le.Ftol).or.&                              !Check convergence
+                (dabs(Ftarget - Ftry).le.Ftol)) exit inversion_loop
+            if (dabs(Cleft-Cright).lt.Ctol) exit inversion_loop         !Escape if the C interval is too small
+            if (it_counter.gt.max_iter) &                               !Halt if max iterations exceeded
+               call shutdown('albdf_mix: Counter exceeded')         
+            if ((Ftry - Ftarget)/(Fleft - Ftarget).lt.0) then           !Update boundary values
+               Cright = Ctry; Fright = Ftry
+            elseif ((Ftry - Ftarget)/(Fright - Ftarget).lt.0) then
+               Cleft = Ctry; Fleft = Ftry
+            else
+
+               call shutdown('albdf_mix: Problem in ALBDF inversion')
+            endif
+         enddo inversion_loop
+
+         !Final value
+         CF = Ctry
+         return
+      endif
+
+   endfunction albdf_mix
+
+   !====================================================================
+   !Function to check if species isp is a participating 
+   !species  in the framework of the SLW model
+   !====================================================================
+   logical function is_slw_species(isp)
+      
+      implicit none
+      integer,intent(in) :: isp
+      is_slw_species = (albdf_nx(isp).gt.0).and.&
+                       (albdf_file(isp).ne.'null')
+
+   endfunction is_slw_species
+
+   !====================================================================
+   !Function to compute the Planck-mean
+   !absorption coefficient with the SLW model
+   !====================================================================
+   real(eb) function get_slw_kp(Tgas,Pgas,Xgas,Tsource,ngas,&
+                                prepare_albdf,bslw_band_index)
+   
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: CheckMemAlloc
+      implicit none
+      integer :: ierr,jgas,ipb
+      integer,intent(in) :: ngas
+      integer,optional :: bslw_band_index
+      logical,optional :: prepare_albdf
+      logical :: go_albdf,transparent_window
+      real(eb),intent(in) :: Pgas,Tgas,Tsource,Xgas(:)
+      real(eb) :: cj_sup_loc,F0
+      real(eb),allocatable,dimension(:) :: cj_ref,cj_sup_ref
+      real(eb),allocatable,dimension(:) :: Fj_ref,Fj_sup_ref
+      real(eb) :: a_j,kappa_j,sum_kp
+      a_j = Pgas  !Added just to avoid a compilation warning
+      
+      !-----------------------------------------------------------------
+      !Set up the optional parameters
+      !-----------------------------------------------------------------     
+      !Flag for loading the ALBDF
+      go_albdf = .false.
+      if (present(prepare_albdf)) go_albdf = prepare_albdf
+      
+      !Band index
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
+
+      !-----------------------------------------------------------------
+      !Allocating arrays
+      !-----------------------------------------------------------------
+      allocate(cj_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('cj_ref',ierr)
+      allocate(cj_sup_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('cj_sup_ref',ierr)
+      allocate(Fj_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('Fj_ref',ierr)
+      allocate(Fj_sup_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('Fj_sup_ref',ierr)
+
+      !-----------------------------------------------------------------
+      !Define cross-sections
+      !-----------------------------------------------------------------
+      if (slw_F_discretization) then
+         call get_slw_Fj(ngas,Fj_ref(1:ngas),Fj_sup_ref(1:ngas))
+         Fj_sup_ref(0) = slw_Fmin  
+      else
+         call get_slw_cj(slw_cmin,slw_cmax,ngas,cj_ref(1:ngas),&
+                         cj_sup_ref(1:ngas))
+         cj_sup_ref(0) = slw_cmin         
+      endif
+
+      !-----------------------------------------------------------------
+      !Main loop
+      !-----------------------------------------------------------------
+      sum_kp = 0._eb
+      gas_loop: do jgas=0,ngas
+         !Check if the gas is a transparent window
+         transparent_window = .false.                                   !The transparent window should be included in 
+         if (jgas.eq.0) transparent_window = .true.                     !  the gas_loop loop to initialize F0
+      
+         !Compute properties for the gas
+         call compute_slw_gas_parameters(kappa_j,a_j,cj_sup_ref(jgas),&
+            cj_sup_loc,Fj_ref(jgas),Fj_sup_ref(jgas),F0,Tgas,Xgas,&
+            reference_T=Tsource,reference_xs=Xgas,transparent_window=&
+            transparent_window,bslw_band_index=ipb)
+
+         !Summing for the Planck-mean absorption coefficient
+         sum_kp = sum_kp + kappa_j*a_j
+            
+      enddo gas_loop
+      get_slw_kp = sum_kp
+      
+      !-----------------------------------------------------------------
+      !Deallocate arrays
+      !-----------------------------------------------------------------
+      deallocate(cj_ref,cj_sup_ref)
+      deallocate(Fj_ref,Fj_sup_ref)
+
+   endfunction get_slw_kp 
+
+   !====================================================================
+   !Function to compute the gas emissivity with the SLW model
+   !====================================================================
+   real(eb) function get_slw_emissivity(Tgas,Pgas,Xgas,Tsource,ngas,&
+                                   length,prepare_albdf,bslw_band_index)
+   
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: CheckMemAlloc
+      implicit none
+      integer :: ierr,jgas,ipb
+      integer,intent(in) :: ngas
+      integer,optional :: bslw_band_index
+      logical,optional :: prepare_albdf
+      logical :: go_albdf,transparent_window
+      real(eb),intent(in) :: length,Pgas,Tgas,Tsource,Xgas(:)
+      real(eb) :: a_j,kappa_j,sum_emi
+      real(eb) :: cj_sup_loc,F0
+      real(eb),allocatable,dimension(:) :: cj_ref,cj_sup_ref
+      real(eb),allocatable,dimension(:) :: Fj_ref,Fj_sup_ref      
+      a_j = Pgas  !Added just to avoid a compilation warning
+
+      !-----------------------------------------------------------------
+      !Set up the optional parameters
+      !-----------------------------------------------------------------
+      
+      !Flag for loading the ALBDF
+      go_albdf = .false.
+      if (present(prepare_albdf)) go_albdf = prepare_albdf
+      
+      !Band index
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
+
+      !-----------------------------------------------------------------
+      !Allocating arrays
+      !-----------------------------------------------------------------
+      call dprint('get_slw_emissivity: Allocating arrays')
+      allocate(cj_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('cj_ref',ierr)
+      allocate(cj_sup_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('cj_sup_ref',ierr)
+      allocate(Fj_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('Fj_ref',ierr)
+      allocate(Fj_sup_ref(0:ngas),stat=ierr)
+      call CheckMemAlloc('Fj_sup_ref',ierr)
+
+      !-----------------------------------------------------------------
+      !Define cross-sections
+      !-----------------------------------------------------------------
+      if (slw_F_discretization) then
+         call get_slw_Fj(ngas,Fj_ref(1:ngas),Fj_sup_ref(1:ngas))
+         Fj_sup_ref(0) = slw_Fmin  
+      else
+         call get_slw_cj(slw_cmin,slw_cmax,ngas,cj_ref(1:ngas),&
+                         cj_sup_ref(1:ngas))
+         cj_sup_ref(0) = slw_cmin         
+      endif
+
+      !-----------------------------------------------------------------
+      !Main loop
+      !-----------------------------------------------------------------
+      sum_emi = 0._eb
+      gas_loop: do jgas=0,ngas
+         !Check if the gas is a transparent window
+         transparent_window = .false.                                   !The transparent window should be included in 
+         if (jgas.eq.0) transparent_window = .true.                     !  the gas_loop loop to initialize F0
+      
+         !Compute properties for the gas
+         call compute_slw_gas_parameters(kappa_j,a_j,cj_sup_ref(jgas),&
+            cj_sup_loc,Fj_ref(jgas),Fj_sup_ref(jgas),F0,Tgas,Xgas,&
+            reference_T=Tsource,reference_xs=Xgas,transparent_window=&
+            transparent_window,bslw_band_index=ipb)
+
+         !Summing the emissivity
+         sum_emi = sum_emi + a_j*(1._eb - dexp(-kappa_j*length))
+      enddo gas_loop
+      get_slw_emissivity = sum_emi
+
+      !-----------------------------------------------------------------
+      !Deallocate arrays
+      !-----------------------------------------------------------------
+      deallocate(cj_ref,cj_sup_ref)
+      deallocate(Fj_ref,Fj_sup_ref)
+
+   endfunction get_slw_emissivity
+
+      !====================================================================
+   !Routine to determine the absorption coefficient 
+   !and the weighting coefficient of a gray gas
+   !====================================================================
+   !Inputs:
+   !  Tloc -> local temperature
+   !  xsloc -> array with the local species mole fraction
+   !  csup_ref -> reference supplemental cross-section, 
+   !     \tilde{C}_{j}^{ref}
+   !  csup_loc0 -> local supplemental cross-section @ j-1, 
+   !     \tilde{C}_{j-1}^{ref}
+   !  Fref -> ALBDF @ reference cross-section, F_{ref}
+   !  Fsup_ref -> ALBDF @ reference supplemental cross-section,
+   !     \tilde{F}_{j}^{ref}
+   !  F0 -> lower bound of blackbody energy fraction to be used for the
+   !     calculation of the weighting coefficient; this value is updated
+   !     to the one corresponding to the next supplemental cross-section
+   !  reference_T, reference_xs -> reference temperature and species
+   !     mole fractions. Optional variables; if not provided, the values
+   !     of slw_Tref and slw_xsref are used
+   !  nonuniform_method -> string specifying which nonuniform treatment
+   !     to be used. Optional variable; if not provided, the value of
+   !     slw_nonuniform_method is used
+   !  transparent_window -> if .true., compute the gas parameters for
+   !     a transparent window. Optional variable; default = .false.
+   !  scaling_coeff -> local scaling coefficient, necessary for the
+   !     scaled SLW method. Optional parameter
+   !Outputs:
+   !  kj -> absorption coefficient
+   !  aj -> weighting coefficient
+   !  F0, csup_loc0* -> updated for the calculation with the next gray
+   !     gas (*depending on the method)
+   subroutine compute_slw_gas_parameters(kj,aj,csup_ref,csup_loc0,&
+      Fref,Fsup_ref,F0,Tloc,xsloc,reference_T,reference_xs,&
+      nonuniform_method,transparent_window,scaling_coeff,&
+      imesh,jmesh,kmesh,bslw_band_index)
+
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: shutdown
+      implicit none
+      character(*),intent(in),optional :: nonuniform_method
+      character(200) :: nuni_method
+      integer,intent(in),optional :: bslw_band_index,imesh,jmesh,kmesh
+      integer :: ipb,isp
+      integer :: iimesh,jjmesh,kkmesh
+      logical,intent(in),optional :: transparent_window
+      logical :: twindow
+      real(eb),intent(in) :: Fref,Tloc,xsloc(:)
+      real(eb),intent(in),optional :: reference_T,reference_xs(:),&
+         scaling_coeff
+      real(eb),intent(out) :: aj,kj
+      real(eb),intent(inout) :: csup_loc0,csup_ref,Fsup_ref,F0
+      real(eb) :: p,Tref,uloc,xmix,xsref(size(xsloc))
+      real(eb) :: cloc,cref,csup_loc
+      real(eb) :: F1,Floc,Fsup_loc
+
+      !-----------------------------------------------------------------
+      !Preparatory procedures
+      !-----------------------------------------------------------------
+      !For now, only cases with p = 1 atm are supported
+      p = 1._eb                                                         
+
+      !Compute total mole fraction of participating species
+      xmix = 0._eb
+      do isp=1,number_of_species
+         if (is_slw_species(isp)) xmix = xmix + xsloc(isp)
+      enddo
+
+      !-----------------------------------------------------------------
+      !Set up optional parameters
+      !-----------------------------------------------------------------
+      Tref = slw_Tref
+      if (present(reference_T)) Tref = reference_T
+
+      xsref = slw_xsref(1:size(xsloc))
+      if (present(reference_xs)) xsref = reference_xs
+
+      nuni_method = slw_nuni_internal
+      if (present(nonuniform_method)) nuni_method = nonuniform_method
+
+      twindow = .false.
+      if (present(transparent_window)) twindow = transparent_window
+
+      uloc = 1._eb
+      if (present(scaling_coeff)) uloc = scaling_coeff
+      
+      iimesh = -1; if (present(imesh)) iimesh = imesh
+      jjmesh = -1; if (present(jmesh)) jjmesh = jmesh
+      kkmesh = -1; if (present(kmesh)) kkmesh = kmesh
+
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
+
+      !-----------------------------------------------------------------
+      !Set up surrogate names for nonuniform approaches
+      !-----------------------------------------------------------------
+      if ((trim(nuni_method).eq.'scaled').and.&
+         (.not.present(scaling_coeff))) &
+            call shutdown('Compute_slw_gas_parameters: &
+               &scaling_coeff must be specified for scaled-SLW method')
+
+      !-----------------------------------------------------------------
+      !Compute parameters, following the recipes in Solovjov et al. 
+      !(2017) and Webb et al. (2018). The nomenclature of the I and II
+      !methods follows the former paper
+      !-----------------------------------------------------------------
+      selectcase(trim(nuni_method))
+      case('uniform')
+         !Inputs: csup_loc and csup_loc0
+         if (.not.twindow) cloc = get_slw_single_cj(csup_loc0,csup_ref) !Local cross-section determined from the supplementar ones
+         F1 = albdf_mix(Tloc,xsloc,Tloc,csup_ref,bslw_band_index=ipb)
+         csup_loc0 = csup_ref         
+
+      case('scaled')
+         !Inputs csup_ref and csup_ref0
+         if (.not.twindow) cloc = get_slw_single_cj(csup_loc0,csup_ref) !Local cross-section determined from the supplementar ones
+         F1 = albdf_mix(Tref,xsref,Tloc,csup_ref,&
+                        imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                        bslw_band_index=ipb)
+         csup_loc0 = csup_ref
+
+      case('I.1.1')
+         !Inputs: csup_ref and csup_loc0
+         Fsup_ref = albdf_mix(Tref,xsref,Tref,csup_ref,&                !ALBDF evaluated at the reference state, reference Tb
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         csup_loc = albdf_mix(Tloc,xsloc,Tref,Fsup_ref,invert=.true.,&  !Get the local supplementar cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         if (.not.twindow) cloc = get_slw_single_cj(csup_loc0,csup_loc) !Local cross-section determined from the supplementar ones
+         F1 = albdf_mix(Tref,xsref,Tloc,csup_ref,&                      !ALBDF evaluated at the reference state, local Tb
+                        imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                        bslw_band_index=ipb)
+         csup_loc0 = csup_loc                                           !Update local supplemental cross-section for the calculation
+                                                                        !  with the next gray gas
+      case('I.1.2')
+         !Inputs: csup_ref and csup_loc0
+         Fsup_ref = albdf_mix(Tref,xsref,Tref,csup_ref,&                !ALBDF evaluated at the reference state, reference Tb
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         csup_loc = albdf_mix(Tloc,xsloc,Tref,Fsup_ref,invert=.true.,&  !Get the local supplementar cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         if (.not.twindow) cloc = get_slw_single_cj(csup_loc0,csup_loc) !Local cross-section determined from the supplementar ones
+         F1 = albdf_mix(Tloc,xsloc,Tloc,csup_loc,&                      !ALBDF evaluated at the reference state, local Tb
+                        imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                        bslw_band_index=ipb)
+         csup_loc0 = csup_loc                                           !Update local supplemental cross-section for the calculation
+                                                                        !  with the next gray gas
+      case('I.2.1')
+         !Inputs: Fref and Fsup_ref
+         if (.not.twindow) cloc = albdf_mix(Tloc,xsloc,Tref,Fref,&      !Local cross-section
+            invert=.true.,imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+            bslw_band_index=ipb)
+         csup_ref = albdf_mix(Tref,xsref,Tref,Fsup_ref,invert=.true.,&  !Reference supplemental cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         F1 = albdf_mix(Tref,xsref,Tloc,csup_ref,bslw_band_index=ipb)   !ALBDF evaluated at the reference state, local Tb
+
+      case('I.2.2')
+         !Inputs: Fref and Fsup_ref
+         if (.not.twindow) cloc = albdf_mix(Tloc,xsloc,Tref,Fref,&      !Local cross-section
+            invert=.true.,imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+            bslw_band_index=ipb)
+         csup_loc = albdf_mix(Tloc,xsloc,Tref,Fsup_ref,invert=.true.,&  !Local supplemental cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         F1 = albdf_mix(Tloc,xsloc,Tloc,csup_loc,&                      !ALBDF evaluated at the reference state, local Tb
+                        imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                        bslw_band_index=ipb)
+
+      case('II.1.1')
+         !Inputs: csup_ref and csup_loc0
+         Fsup_loc = albdf_mix(Tref,xsref,Tloc,csup_ref,&                !ALBDF evaluated at the reference state, local Tb
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         csup_loc = albdf_mix(Tloc,xsloc,Tloc,Fsup_loc,invert=.true.,&  !Local supplemental cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         if (.not.twindow) cloc = get_slw_single_cj(csup_loc0,csup_loc) !Local cross-section determined from the supplementar ones
+         F1 = Fsup_loc                                                  !ALBDF evaluated at the reference state, local Tb
+         csup_loc0 = csup_loc                                           !Update local supplemental cross-section for the calculation
+                                                                        !  with the next gray gas
+      case ('II.2.1')
+         !Inputs: Fref and Fsup_ref
+         csup_ref = albdf_mix(Tref,xsref,Tref,Fsup_ref,invert=.true.,&  !Reference supplemental cross-section
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         Fsup_loc = albdf_mix(Tref,xsref,Tloc,csup_ref,&                !ALBDF @ reference state, local Tb
+                              imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                              bslw_band_index=ipb)
+         if (.not.twindow) then
+            cref = albdf_mix(Tref,xsref,Tref,Fref,invert=.true.,&       !Reference cross-section
+                             imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                             bslw_band_index=ipb)
+            Floc = albdf_mix(Tref,xsref,Tloc,cref,&                     !ALBDF @ reference state, local Tb
+                             imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                             bslw_band_index=ipb)
+            cloc = albdf_mix(Tloc,xsloc,Tref,Floc,invert=.true.,&       !Local cross-section
+                             imesh=iimesh,jmesh=jjmesh,kmesh=kkmesh,&
+                             bslw_band_index=ipb)
+         endif
+         F1 = Fsup_loc                                                  !ALBDF @ the reference state, local Tb
+
+      case default
+         call shutdown('compute_slw_gas_parameters: nonuniform method &
+                       &unspecified')
+      endselect
+
+      !-----------------------------------------------------------------
+      !Finish the calculation
+      !-----------------------------------------------------------------
+      if (twindow) F0 = 0._eb
+      if (twindow) cloc = 0._eb
+      kj = uloc*slw_kappa_func(Tloc,p,xmix,cloc)                        !Absorption coefficient
+      aj = F1 - F0                                                      !Weighting coefficient
+      F0 = F1                                                           !Update F0 value for the calculation with
+                                                                        !  the next gray gas
+
+   endsubroutine compute_slw_gas_parameters
+
+   !====================================================================
+   !Subroutine to compute the reference parameters (kappa and a) for
+   !the SLW-1 model
+   !Input:
+   !   Tref -> Reference temperature
+   !   xsref -> Reference mole fractions of the species
+   !   pref -> Reference pressure
+   !Output:
+   !   kappa_out -> Reference absorption coefficient for gas 1
+   !   a_out -> Reference weighting coefficient for gas 1
+   !====================================================================
+   subroutine slw1_compute_ref(Tref,xsref,pref,kappa_out,a_out,&
+                               bslw_band_index)
+
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      use comp_functions, only: CheckMemAlloc,shutdown
+      use constants, only: pi,twopi
+      use lbl_functions, only: lbl_spectral_emission,&
+         lbl_spectral_emissivity,load_lbl_data
+      !use lbl_parameters, only: lbl_nlines
+      use math_functions, only: expint
+      use precision_parameters, only: big,small
+      use physical_functions, only: bb_emission_frac,Ib_function
+      use slw1_direct_opt                                               !Direct Module
+      implicit none
+      integer,intent(in),optional :: bslw_band_index
+      integer,parameter :: max_iter = 1000                              !Maximum number of allowed iterations
+      integer :: counter,root_counter,ipb
+      logical :: slw1_converged
+      real(eb),intent(in) :: pref,Tref,xsref(:)
+      real(eb),intent(out) :: a_out,kappa_out
+      real(eb),parameter :: iter_tol=1.e-6_eb
+      real(eb) :: bbfrac,diff
+      real(eb) :: eps,eps_1,eps_2,kp,length,L_1,L_2
+      real(eb) :: f_1,f_2,q_1,q_2,x_1,x_2,x_c,x_l,x_r,x_r0,y_c,y_l,y_r
+      real(eb) :: factor_x,denum,num,dx,k_new,k_old
+      real(eb) :: a_test,kappa_step,kappa_test
+      !real(eb),allocatable,dimension(:) :: eta_pos,spectral_eps,&
+      !   spectral_kIb
+
+      !-----------------------------------------------------------------
+      !Set up optional parameters
+      !-----------------------------------------------------------------
+      ipb = 1; if (present(bslw_band_index)) ipb = bslw_band_index
+
+      selectcase(trim(slw1_approach))
+         !--------------------------------------------------------------
+         !Planck-mean absorption coefficient-emissivity method
+         !--------------------------------------------------------------
+         case('kp-epsilon')
+            !Compute target values
+            length = maxval(slw1_length)                                !Surrogate name for medium length
+            kp = get_slw_kp(Tref,pref,xsref,Tref,slw1_ngases,&
+                            bslw_band_index=ipb)                        !Reference Planck-mean absorption coefficient
+            eps = get_slw_emissivity(Tref,pref,xsref,Tref,slw1_ngases,& !Reference emissivity
+                                     length,bslw_band_index=ipb)  
+            bbfrac = &
+               bb_emission_frac(bslw_lbound(ipb),Tref,eta_in=.true.) - &
+               bb_emission_frac(bslw_ubound(ipb),Tref,eta_in=.true.)
+            if (bbfrac.lt.0._eb) &
+               call shutdown('bbfrac<0','slw1_compute_ref')
+            
+            !Compute kappa iteratively
+            counter = 0; k_old = 0.1_eb*kp; diff = 2._eb*iter_tol       !Initialize values
+            do while (diff.gt.iter_tol)
+               counter = counter + 1                                    !Update counter
+               if (counter.gt.max_iter) &                               !If maximum allowed number of iterations has been
+                  call shutdown('slw1_compute_ref: Maximum number of &
+                                 &iterations exceeded')                 !  exceeded, halt the solution
+               k_new = (kp/eps)*(1._eb - dexp(-k_old*length))           !Compute new kappa value
+               diff = dabs((k_new - k_old)/(k_old + small))             !Compute relative difference between new and old
+                                                                        !  estimates for kappa
+               k_old = k_new                                            !Update old kappa estimate for new loop
+            enddo
+          
+            !Finish computing kappa and a
+            kappa_out = k_new
+            a_out = kp/k_new
+
+         !--------------------------------------------------------------
+         !Emissivity-emissivity method
+         !--------------------------------------------------------------
+         case('epsilon-epsilon')
+            !Define lengths
+            L_1 = slw1_length(1)
+            L_2 = slw1_length(2)
+            
+            !Compute target values
+            eps_1 = get_slw_emissivity(Tref,pref,xsref,Tref,&
+               slw1_ngases,L_1,bslw_band_index=ipb)
+            eps_2 = get_slw_emissivity(Tref,pref,xsref,Tref,&
+               slw1_ngases,L_2,bslw_band_index=ipb)
+
+            !++++++++++++++++++++ Bisection Method +++++++++++++++++++++
+            !Prepare for the bisection method
+            counter = 0
+            diff = big                                                  !Chose an initial difference value sufficiently large as to
+                                                                        !  enter the iterative loop
+            x_l = 0.0001_eb; x_r = 1000._eb                             !Initialize x-left and x-right values                                
+            y_l = eps_2/(1._eb - dexp(-x_l*L_2)) - &                    !Compute y-left value
+                  eps_1/(1._eb - dexp(-x_l*L_1))
+            y_r = eps_2/(1._eb - dexp(-x_r*L_2)) - &                    !Compute y-right value
+                  eps_1/(1._eb - dexp(-x_r*L_1))
+            if (y_l*y_r.gt.0) &                                         !If there is no root in between the left and right values,
+                  call shutdown('slw1_compute_ref: Problem with &
+                                &bisection method')                     !  halt the solution
+            
+            !Apply the bisection mehtod
+            do while(diff.gt.iter_tol)
+               counter = counter + 1                                    !Update iteration counter
+               if (counter.gt.max_iter) &                               !If the maximum number of iterations is exceeded,
+                  call shutdown('slw1_compute_ref: Maximum number of &
+                                 &iterations exceeded')                 !  halt the solution
+               x_c = (x_l + x_r)/2._eb                                  !Set x-center as the midpoint between x-left and x-right
+               y_c = eps_2/(1._eb - dexp(-x_c*L_2)) - &                 !Compute y-center value
+                     eps_1/(1._eb - dexp(-x_c*L_1))
+               if (y_c*y_l.lt.0) then                                   !If there is a root between x-center and x-left
+                  x_r = x_c                                             !  then move x-right to x-center
+                  y_r = y_c                                             !  and update y-right to y-center
+               endif
+               if (y_c*y_r.lt.0) then                                   !If there is a root between x-center and x-right
+                  x_l = x_c                                             !  then move x-left to x-center
+                  y_l = y_c                                             !  and update y-left to y-center
+               endif
+               diff = dabs((x_l - x_r)/(x_c + small))                   !Compute relative difference between x-left and x-right
+            enddo
+
+            !Finish computing kappa and a
+            kappa_out = x_c
+            a_out = eps_1/(1._eb - dexp(-x_c*L_1))
+
+         case default
+            call shutdown('slw1_compute_ref: &
+               &No valid option for slw1_approach')
+      endselect
+
+   endsubroutine slw1_compute_ref
 
 END MODULE RAD
+
 
