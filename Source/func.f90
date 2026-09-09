@@ -739,6 +739,69 @@ IMPLICIT NONE (TYPE,EXTERNAL)
 
 CONTAINS
 
+  !====================================================================
+   !Function to locate a value within an array with a bisection method
+   !====================================================================
+   !Returns a value j such that xval is between xarray(j) and 
+   !xarray(j+1); npts is the number of points in the array.
+   !Returns j=0 or j=npts if xval is out of bounds.
+   !(adapted from Numerical Recipes)
+   integer function locate(xarray,xval,npts)
+
+      !-----------------------------------------------------------------
+      !Declaration of variables
+      !-----------------------------------------------------------------
+      implicit none
+      integer :: npts
+      integer :: jl,ju,jm
+      real(dp),intent(in) :: xarray(npts),xval
+      logical :: ascnd
+
+      !-----------------------------------------------------------------
+      !Find if the array is in ascending or descending order
+      !-----------------------------------------------------------------
+      if (xarray(npts).ge.xarray(1)) ascnd = .true.
+      if (xarray(npts).lt.xarray(1)) ascnd = .false.
+      
+      !-----------------------------------------------------------------
+      !Main loop
+      !-----------------------------------------------------------------
+      jl = 0                                                            !Initialize lower
+      ju = npts + 1                                                     !and upper limits
+      do
+         if ((ju-jl).le.1) exit
+         jm=(ju+jl)/2                                                   !Compute midpoint
+         if (ascnd.eqv.(xval.ge.xarray(jm))) then                       !and replace the 
+            jl=jm                                                       !upper or lower
+         else                                                           !limits accordingly
+            ju=jm
+         end if
+      end do
+      
+      !-----------------------------------------------------------------
+      !Set the output
+      !-----------------------------------------------------------------
+      if (xval.eq.xarray(1)) then
+         locate=1
+      elseif (xval.eq.xarray(npts)) then
+         locate=npts-1
+      else
+         locate=jl
+      endif
+   
+   endfunction locate
+   
+   !====================================================================
+   !Kronecker delta function
+   !====================================================================
+   integer function kron_delta(ii,jj)
+   
+      implicit none
+      integer,intent(in) :: ii,jj
+      kron_delta = 1; if (ii.ne.jj) kron_delta = 0
+   
+   endfunction kron_delta
+
    !====================================================================
    !Subroutine to define the quadrature points and 
    !weights according to the Gauss-Legendre quadrature
@@ -7118,4 +7181,5 @@ ENDIF
 END SUBROUTINE DEFINE_PRES_METHOD
 
 END MODULE MISC_FUNCTIONS
+
 
