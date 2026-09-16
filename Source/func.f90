@@ -754,7 +754,7 @@ CONTAINS
       implicit none
       integer :: npts
       integer :: jl,ju,jm
-      real(dp),intent(in) :: xarray(npts),xval
+      real(eb),intent(in) :: xarray(npts),xval
       logical :: ascnd
 
       !-----------------------------------------------------------------
